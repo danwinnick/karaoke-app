@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#120b24" />
+    <title>Karaoke · DJ sign up</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/css/app.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <span class="logo-sm">🎤 Karaoke · DJ</span>
+      <a class="link" href="/auth/logout">Log out</a>
+    </header>
+    <main class="narrow">
+      <h1 id="heading">Set up your DJ profile</h1>
+      <p class="muted">Singers nearby will see you in their list of DJs.</p>
+
+      <form id="dj-form" class="card form" novalidate>
+        <label class="label" for="name">DJ name</label>
+        <input id="name" class="input" name="name" maxlength="100" required autocomplete="name" />
+
+        <label class="label" for="email">Email</label>
+        <input id="email" class="input" name="email" type="email" maxlength="254" required autocomplete="email" />
+
+        <span class="label" id="address-label">Venue address</span>
+        <div id="address-host" class="address-host" aria-labelledby="address-label">
+          <p class="muted small" id="address-loading">Loading address search…</p>
+        </div>
+        <p id="address-chosen" class="address-chosen small" hidden></p>
+
+        <p id="form-error" class="banner banner-error" hidden></p>
+        <button id="submit" class="btn btn-primary btn-block" type="submit">Save and open my queue</button>
+      </form>
+    </main>
+    <script type="module" src="/js/dj-signup.js"></script>
+  </body>
+</html>

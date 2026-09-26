@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#120b24" />
+    <title>Karaoke · Singer</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/css/app.css" />
+  </head>
+  <body class="singer-page">
+    <header class="topbar">
+      <span class="logo-sm">🎤 Karaoke</span>
+      <span class="topbar-right">
+        <span id="user-name" class="muted small"></span>
+        <a class="link" href="/auth/logout">Log out</a>
+      </span>
+    </header>
+
+    <main class="singer-main">
+      <section id="tab-tonight">
+        <div class="card">
+          <label class="label" for="dj-select">Your DJ tonight</label>
+          <select id="dj-select" class="input">
+            <option value="">Loading DJs…</option>
+          </select>
+          <p id="dj-address" class="muted small"></p>
+        </div>
+
+        <div id="needs-dj" class="card empty">Pick your DJ above to join the line.</div>
+
+        <div id="with-dj" hidden>
+          <div class="card status-card">
+            <div class="position-wrap">
+              <span class="position-hash">#</span><span id="position" class="position">–</span>
+            </div>
+            <div id="position-label" class="position-label"></div>
+            <div id="now-playing" class="now-playing small"></div>
+          </div>
+
+          <div class="card">
+            <label class="label" for="song-search">Find a karaoke track</label>
+            <div class="search">
+              <input
+                id="song-search"
+                class="input"
+                type="search"
+                inputmode="search"
+                autocomplete="off"
+                autocapitalize="off"
+                placeholder="Type an artist or song…"
+                role="combobox"
+                aria-autocomplete="list"
+                aria-controls="suggestions"
+                aria-expanded="false"
+              />
+              <ul id="suggestions" class="suggestions" role="listbox" hidden></ul>
+            </div>
+
+            <div id="selected" class="selected" hidden>
+              <img id="selected-thumb" alt="" />
+              <label class="label" for="song-name">Song name</label>
+              <input id="song-name" class="input" maxlength="200" />
+              <button id="add-song" class="btn btn-primary btn-block">Add to the line</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2 class="card-title">My songs tonight</h2>
+            <ul id="my-songs" class="song-list"></ul>
+          </div>
+
+          <div class="card tip-card">
+            <button id="tip-btn" class="btn btn-tip btn-block">💲 Tip the DJ</button>
+            <p id="tip-help" class="muted small"></p>
+          </div>
+        </div>
+      </section>
+
+      <section id="tab-history" hidden>
+        <h2 class="section-title">Every song you've picked</h2>
+        <div id="history"></div>
+        <button id="history-more" class="btn btn-ghost btn-block" hidden>Load more</button>
+      </section>
+    </main>
+
+    <nav class="tabbar">
+      <button class="tab active" data-tab="tonight">🎤<span>Tonight</span></button>
+      <button class="tab" data-tab="history">🕘<span>History</span></button>
+    </nav>
+
+    <script type="module" src="/js/singer.js"></script>
+  </body>
+</html>

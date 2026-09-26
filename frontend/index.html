@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#120b24" />
+    <title>Karaoke</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/css/app.css" />
+  </head>
+  <body class="landing">
+    <main class="landing-main">
+      <h1 class="logo">🎤 Karaoke</h1>
+      <p class="tagline">Get in line, pick your song, and watch your spot climb.</p>
+      <p id="error" class="banner banner-error" hidden></p>
+
+      <section class="role-card">
+        <h2>I'm a singer</h2>
+        <p>Find your DJ, search karaoke tracks, and see your place in line.</p>
+        <a class="btn btn-primary btn-block" href="/auth/login?role=singer">Singer log in</a>
+        <a class="btn btn-ghost btn-block" href="/auth/login?role=singer&amp;signup=1">Sign up to sing</a>
+      </section>
+
+      <section class="role-card">
+        <h2>I'm a DJ</h2>
+        <p>Run the queue and play tracks with the next singers on screen.</p>
+        <a class="btn btn-primary btn-block" href="/auth/login?role=dj">DJ log in</a>
+        <a class="btn btn-ghost btn-block" href="/auth/login?role=dj&amp;signup=1">Sign up as a DJ</a>
+      </section>
+    </main>
+    <script>
+      const error = new URLSearchParams(location.search).get('error');
+      if (error) {
+        const banner = document.getElementById('error');
+        banner.textContent = error;
+        banner.hidden = false;
+      }
+    </script>
+  </body>
+</html>

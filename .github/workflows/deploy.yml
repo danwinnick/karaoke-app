@@ -1,0 +1,76 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: karaoke-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  AWS_REGION: us-west-2
+  AWS_DEFAULT_REGION: us-west-2
+  TF_IN_AUTOMATION: "true"
+  TF_VAR_domain: ${{ vars.DOMAIN }}
+  TF_VAR_hosted_zone_id: ${{ vars.HOSTED_ZONE_ID }}
+  TF_VAR_workos_authkit_domain: ${{ vars.WORKOS_AUTHKIT_DOMAIN }}
+  TF_VAR_google_maps_api_key: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+  TF_VAR_youtube_api_key: ${{ secrets.YOUTUBE_API_KEY }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Unit tests
+        working-directory: backend
+        run: npm test
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.13.3
+          terraform_wrapper: false
+
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive
+
+      - name: Terraform init
+        run: terraform init -input=false
+
+      - name: Terraform validate
+        run: terraform validate
+
+      - name: Terraform plan
+        run: terraform plan -input=false -out=tfplan
+
+      - name: Terraform apply
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: terraform apply -input=false -auto-approve tfplan
+
+      - name: Invalidate CloudFront
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "$(terraform output -raw cloudfront_distribution_id)" \
+            --paths "/*"
+          echo "Deployed to $(terraform output -raw url)" >> "$GITHUB_STEP_SUMMARY"
