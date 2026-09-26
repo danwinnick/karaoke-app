@@ -83,7 +83,7 @@ resource "aws_lambda_function" "karaoke_api" {
       SONGS_TABLE           = aws_dynamodb_table.karaoke_requested_songs.name
       SONGS_DJ_INDEX        = "djId-date-index"
       WORKOS_API_KEY_SECRET = data.aws_secretsmanager_secret.karaoke_workos_api_key.arn
-      WORKOS_CLIENT_ID      = local.workos.client_id
+      WORKOS_CLIENT_ID      = local.workos_client_id
       WORKOS_ORG_ID         = local.workos.organization_id
       AUTHKIT_DOMAIN        = var.workos_authkit_domain
       SESSION_SECRET        = random_password.karaoke_session_secret.result

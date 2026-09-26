@@ -42,18 +42,23 @@ A "night" is a calendar date in `night_timezone` (default `America/Los_Angeles`)
    aws secretsmanager create-secret --region us-west-2 \
      --name karaoke/workos_api_key --secret-string 'sk_live_...'
    ```
-3. **WorkOS dashboard:** enable AuthKit with email sign-up allowed, and copy your AuthKit domain (Dashboard → Domains, e.g. `your-app.authkit.app`). The deploy creates the organization `karaoke-<domain>` and a first-party OAuth application with the same name. It also registers `https://karaoke.<domain>/auth/callback` on that application.
-4. **Google Cloud:**
+3. **WorkOS client ID:** store it in SSM Parameter Store (us-west-2) as `/karaoke/workos_client_id`. The API uses it as the OAuth `client_id` for AuthKit:
+   ```sh
+   aws ssm put-parameter --region us-west-2 \
+     --name /karaoke/workos_client_id --type String --value 'client_...'
+   ```
+4. **WorkOS dashboard:** enable AuthKit with email sign-up allowed, and copy your AuthKit domain (Dashboard → Domains, e.g. `your-app.authkit.app`). The deploy creates the organization `karaoke-<domain>` and a first-party OAuth application with the same name. It also registers `https://karaoke.<domain>/auth/callback` on that application.
+5. **Google Cloud:**
    - Create a browser key for the **Maps JavaScript API** and **Places API (New)**, restricted to the `https://karaoke.<domain>/*` referrer.
    - Create a server key for the **YouTube Data API v3**. The default quota of 10,000 units a day covers about 100 searches. The API debounces and caches searches, but a busy venue will need a quota increase.
-5. **GitHub repository settings:**
+6. **GitHub repository settings:**
 
    | Kind | Name | Value |
    | --- | --- | --- |
    | Secret | `AWS_ACCESS_KEY_ID` | Deploy credentials |
    | Secret | `AWS_SECRET_ACCESS_KEY` | Deploy credentials |
-   | Secret | `GOOGLE_MAPS_API_KEY` | Browser key from step 4 |
-   | Secret | `YOUTUBE_API_KEY` | Server key from step 4 |
+   | Secret | `GOOGLE_MAPS_API_KEY` | Browser key from step 5 |
+   | Secret | `YOUTUBE_API_KEY` | Server key from step 5 |
    | Variable | `DOMAIN` | e.g. `example.com` |
    | Variable | `HOSTED_ZONE_ID` | Route53 zone ID for `DOMAIN` |
    | Variable | `WORKOS_AUTHKIT_DOMAIN` | e.g. `your-app.authkit.app` |

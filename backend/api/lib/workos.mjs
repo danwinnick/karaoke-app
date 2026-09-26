@@ -20,8 +20,8 @@ export function getApiKey() {
   return apiKeyPromise;
 }
 
-// AuthKit acts as the OAuth/OIDC provider for the first-party Connect application
-// created by the karaoke-workos-bootstrap Lambda.
+// AuthKit acts as the OAuth/OIDC provider. WORKOS_CLIENT_ID comes from the SSM
+// parameter /karaoke/workos_client_id.
 function oidcConfig() {
   const issuer = `https://${process.env.AUTHKIT_DOMAIN}`;
   oidcPromise ??= fetch(`${issuer}/.well-known/openid-configuration`)

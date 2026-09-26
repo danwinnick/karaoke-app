@@ -4,6 +4,12 @@ data "aws_secretsmanager_secret" "karaoke_workos_api_key" {
   name = "karaoke/workos_api_key"
 }
 
+# The WorkOS client ID is created by hand in SSM Parameter Store before the first deploy.
+# It is the client_id the API uses for the AuthKit OAuth flow.
+data "aws_ssm_parameter" "karaoke_workos_client_id" {
+  name = "/karaoke/workos_client_id"
+}
+
 data "archive_file" "karaoke_workos_bootstrap" {
   type        = "zip"
   source_dir  = "${path.module}/../backend/workos-bootstrap"
@@ -79,4 +85,7 @@ resource "aws_lambda_invocation" "karaoke_workos_bootstrap" {
 
 locals {
   workos = jsondecode(aws_lambda_invocation.karaoke_workos_bootstrap.result)
+
+  # A client ID is not a secret, but the data source always marks the value sensitive.
+  workos_client_id = nonsensitive(data.aws_ssm_parameter.karaoke_workos_client_id.value)
 }

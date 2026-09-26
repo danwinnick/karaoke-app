@@ -11,5 +11,5 @@ output "workos_organization_id" {
 }
 
 output "workos_client_id" {
-  value = local.workos.client_id
+  value = local.workos_client_id
 }
