@@ -14,18 +14,26 @@
       <p class="tagline">Get in line, pick your song, and watch your spot climb.</p>
       <p id="error" class="banner banner-error" hidden></p>
 
-      <section class="role-card">
-        <h2>I'm a singer</h2>
-        <p>Find your DJ, search karaoke tracks, and see your place in line.</p>
-        <a class="btn btn-primary btn-block" href="/auth/login?role=singer">Singer log in</a>
-        <a class="btn btn-ghost btn-block" href="/auth/login?role=singer&amp;signup=1">Sign up to sing</a>
+      <section id="choose-role" class="role-card">
+        <h2>Who are you tonight?</h2>
+        <button class="btn btn-primary btn-block" type="button" data-role="singer">🎤 I'm a singer</button>
+        <button class="btn btn-primary btn-block" type="button" data-role="dj">🎧 I'm a DJ</button>
       </section>
 
-      <section class="role-card">
+      <section id="role-singer" class="role-card" hidden>
+        <h2>I'm a singer</h2>
+        <p>Find your DJ, search karaoke tracks, and see your place in line.</p>
+        <a class="btn btn-primary btn-block" href="/auth/login?role=singer">Log in as a singer</a>
+        <p class="small">New here? Log in and we'll set up your singer profile.</p>
+        <button class="btn btn-ghost btn-block" type="button" data-role="">← Back</button>
+      </section>
+
+      <section id="role-dj" class="role-card" hidden>
         <h2>I'm a DJ</h2>
         <p>Run the queue and play tracks with the next singers on screen.</p>
-        <a class="btn btn-primary btn-block" href="/auth/login?role=dj">DJ log in</a>
-        <a class="btn btn-ghost btn-block" href="/auth/login?role=dj&amp;signup=1">Sign up as a DJ</a>
+        <a class="btn btn-primary btn-block" href="/auth/login?role=dj">Log in as a DJ</a>
+        <p class="small">New here? Log in and we'll set up your DJ profile.</p>
+        <button class="btn btn-ghost btn-block" type="button" data-role="">← Back</button>
       </section>
     </main>
     <script>
@@ -35,6 +43,15 @@
         banner.textContent = error;
         banner.hidden = false;
       }
+
+      function showRole(role) {
+        document.getElementById('choose-role').hidden = Boolean(role);
+        document.getElementById('role-singer').hidden = role !== 'singer';
+        document.getElementById('role-dj').hidden = role !== 'dj';
+      }
+      document.querySelectorAll('[data-role]').forEach((button) => {
+        button.addEventListener('click', () => showRole(button.dataset.role));
+      });
     </script>
   </body>
 </html>

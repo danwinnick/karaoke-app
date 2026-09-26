@@ -53,6 +53,10 @@ img {
   font-size: 0.875rem;
 }
 
+.center {
+  text-align: center;
+}
+
 .link {
   color: var(--muted);
   text-decoration: none;

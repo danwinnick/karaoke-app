@@ -76,7 +76,7 @@ terraform init && terraform apply
 
 ## How the flows work
 
-- **Login and sign-up:** `/auth/login?role=singer|dj[&signup=1]` redirects to AuthKit using PKCE. `/auth/callback` exchanges the code, adds the user to the WorkOS organization, and sets an HMAC-signed, HttpOnly session cookie that lasts 7 days. DJs without a profile land on `/dj-signup.html`.
+- **Login and sign-up:** `/auth/login?role=singer|dj[&signup=1]` redirects to AuthKit using PKCE. `/auth/callback` exchanges the code, adds the user to the WorkOS organization, and sets an HMAC-signed, HttpOnly session cookie that lasts 7 days. Returning users (found in the DJ or singer table for the role they picked) go straight to their page; new users land on `/dj-signup.html` or `/singer-signup.html`, which link back to logging in as the other role.
 - **Queue order:** each song carries a numeric `order` (the request timestamp). Your number is the position of your earliest queued song.
 - **Tips:** one per singer per night, enforced with a DynamoDB condition. If you're below #10, your next song's `order` is set halfway between #9 and #10, so you land at exactly #10. The DJ UI polls every 4s and shows a 💲 for each new tip, including over the player. Tips are virtual; no payments are involved.
 - **Switching DJs mid-night:** your queued songs move to the back of the new DJ's line.

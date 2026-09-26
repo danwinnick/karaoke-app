@@ -347,7 +347,11 @@ async function boot() {
       window.location.href = '/auth/login?role=singer';
       return;
     }
-    $('user-name').textContent = me.user.name;
+    if (!me.singer) {
+      window.location.href = '/singer-signup.html';
+      return;
+    }
+    $('user-name').textContent = me.singer.name;
     await Promise.all([refresh(), loadDjs()]);
     renderDjOptions();
   } catch (err) {

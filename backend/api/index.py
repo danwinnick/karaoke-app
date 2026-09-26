@@ -69,6 +69,14 @@ def require_dj(event):
     return session, dj
 
 
+def require_singer(event):
+    session = require_role(event, 'singer')
+    singer = db.get_singer(session['sub'])
+    if not singer:
+        raise HttpError(403, 'Finish singer signup first')
+    return session, singer
+
+
 # ---- /auth -----------------------------------------------------------------
 
 
@@ -114,11 +122,11 @@ def callback(event):
         or 'Singer'
     )
 
+    # Returning users go straight in; new ones fill out the signup form for the role they picked.
     if oauth['role'] == 'dj':
         destination = '/dj.html' if db.get_dj(user_id) else '/dj-signup.html'
     else:
-        db.upsert_singer(user_id, name, email)
-        destination = '/singer.html'
+        destination = '/singer.html' if db.get_singer(user_id) else '/singer-signup.html'
 
     session = sign_token({'sub': user_id, 'email': email, 'name': name, 'role': oauth['role']}, SECRET, SESSION_TTL)
     return redirect(destination, [set_cookie(SESSION_COOKIE, session, SESSION_TTL), clear_cookie(OAUTH_COOKIE)])
@@ -137,11 +145,12 @@ def config(event):
 
 def me(event):
     session = require_role(event)
-    dj = db.get_dj(session['sub']) if session.get('role') == 'dj' else None
+    role = session.get('role')
     return json_response(200, {
         'user': {'id': session['sub'], 'name': session.get('name'), 'email': session.get('email')},
-        'role': session.get('role'),
-        'dj': dj,
+        'role': role,
+        'dj': db.get_dj(session['sub']) if role == 'dj' else None,
+        'singer': db.get_singer(session['sub']) if role == 'singer' else None,
     })
 
 
@@ -164,6 +173,13 @@ def _finite(value):
     return number if math.isfinite(number) else None
 
 
+def require_email(value):
+    email = require_string(value, 'Email', 254)
+    if not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email):
+        raise HttpError(400, 'Enter a valid email')
+    return email
+
+
 def dj_profile(event):
     session = require_role(event, 'dj')
     body = parse_body(event)
@@ -171,9 +187,7 @@ def dj_profile(event):
     lng = _finite(body.get('lng'))
     if lat is None or lng is None:
         raise HttpError(400, 'Pick your address from the suggestions')
-    email = require_string(body.get('email'), 'Email', 254)
-    if not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email):
-        raise HttpError(400, 'Enter a valid email')
+    email = require_email(body.get('email'))
 
     place_id = body.get('placeId')
     dj = db.put_dj({
@@ -288,13 +302,22 @@ def singer_status(singer_id):
     }
 
 
-def get_status(event):
+def singer_profile(event):
     session = require_role(event, 'singer')
+    body = parse_body(event)
+    name = require_string(body.get('name'), 'Name', 100)
+    email = require_email(body.get('email'))
+    db.upsert_singer(session['sub'], name, email)
+    return json_response(200, {'singer': db.get_singer(session['sub'])})
+
+
+def get_status(event):
+    session, _ = require_singer(event)
     return json_response(200, singer_status(session['sub']))
 
 
 def choose_dj(event):
-    session = require_role(event, 'singer')
+    session, _ = require_singer(event)
     dj_id = require_string(parse_body(event).get('djId'), 'DJ', 200)
     if not db.get_dj(dj_id):
         raise HttpError(404, 'DJ not found')
@@ -315,7 +338,7 @@ def youtube_search(event):
 
 
 def request_song(event):
-    session = require_role(event, 'singer')
+    session, singer = require_singer(event)
     body = parse_body(event)
     video_id = require_string(body.get('videoId'), 'Video', 20)
     if not re.fullmatch(r'[A-Za-z0-9_-]{11}', video_id):
@@ -325,8 +348,7 @@ def request_song(event):
     if not (isinstance(thumbnail, str) and re.match(r'https://i[0-9]?\.ytimg\.com/', thumbnail)):
         thumbnail = None
 
-    singer = db.get_singer(session['sub'])
-    dj_id = (singer or {}).get('currentDjId')
+    dj_id = singer.get('currentDjId')
     if not dj_id:
         raise HttpError(400, 'Pick a DJ first')
 
@@ -339,7 +361,7 @@ def request_song(event):
     if queued >= MAX_QUEUED_PER_SINGER:
         raise HttpError(400, f'You can have up to {MAX_QUEUED_PER_SINGER} songs in line at once')
 
-    db.append_song(session['sub'], session.get('name'), date, dj_id, {
+    db.append_song(session['sub'], singer.get('name'), date, dj_id, {
         'songId': str(uuid.uuid4()),
         'videoId': video_id,
         'title': title,
@@ -353,7 +375,7 @@ def request_song(event):
 
 
 def cancel_song(event):
-    session = require_role(event, 'singer')
+    session, _ = require_singer(event)
     song_id = require_string(parse_body(event).get('songId'), 'Song', 100)
     date = tonight()
     songs = (db.get_night(session['sub'], date) or {}).get('songs') or []
@@ -365,7 +387,7 @@ def cancel_song(event):
 
 
 def tip(event):
-    session = require_role(event, 'singer')
+    session, _ = require_singer(event)
     date = tonight()
     mine = db.get_night(session['sub'], date)
     if not mine:
@@ -389,7 +411,7 @@ def tip(event):
 
 
 def history(event):
-    session = require_role(event, 'singer')
+    session, _ = require_singer(event)
     try:
         page = db.history_page(session['sub'], query_params(event).get('cursor'))
     except db.InvalidCursor as err:
@@ -434,6 +456,7 @@ ROUTES = {
     'GET /api/dj/queue': dj_queue,
     'POST /api/dj/next': dj_next,
     'POST /api/dj/status': dj_song_status,
+    'POST /api/singer/profile': singer_profile,
     'GET /api/singer/status': get_status,
     'POST /api/singer/dj': choose_dj,
     'GET /api/youtube/search': youtube_search,
