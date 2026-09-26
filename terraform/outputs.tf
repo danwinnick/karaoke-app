@@ -13,3 +13,7 @@ output "workos_organization_id" {
 output "workos_client_id" {
   value = local.workos_client_id
 }
+
+output "workos_redirect_uris" {
+  value = local.workos.redirect_uris
+}

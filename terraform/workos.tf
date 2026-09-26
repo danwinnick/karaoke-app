@@ -84,14 +84,15 @@ resource "aws_lambda_function" "karaoke_workos_bootstrap" {
   ]
 }
 
-# Idempotently creates (or finds) the WorkOS organization and the first-party OAuth
-# application for this deployment, and registers the callback URL on the application.
+# Idempotently creates (or finds) the WorkOS organization for this deployment and registers
+# the callback URL as the default redirect URI on the OAuth application that owns the client
+# ID in SSM, so AuthKit accepts the redirect the API sends. Re-runs whenever the input changes.
 resource "aws_lambda_invocation" "karaoke_workos_bootstrap" {
   function_name = aws_lambda_function.karaoke_workos_bootstrap.function_name
 
   input = jsonencode({
     organizationName = "karaoke-${var.domain}"
-    applicationName  = "karaoke-${var.domain}"
+    clientId         = local.workos_client_id
     redirectUri      = local.callback_url
   })
 

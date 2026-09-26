@@ -13,7 +13,7 @@ Route53 (karaoke.<domain>) ─▶ CloudFront ─┬─ /*        ─▶ S3 (fron
                                                                  ├─ DynamoDB: karaoke-dj, karaoke-singers, karaoke-requested-songs
                                                                  ├─ WorkOS AuthKit (OAuth + PKCE)
                                                                  └─ YouTube Data API v3
-Terraform ─▶ karaoke-workos-bootstrap Lambda ─▶ WorkOS: creates the organization + OAuth application
+Terraform ─▶ karaoke-workos-bootstrap Lambda ─▶ WorkOS: creates the organization + registers the callback URL
 ```
 
 | Path | What it is |
@@ -42,12 +42,12 @@ A "night" is a calendar date in `night_timezone` (default `America/Los_Angeles`)
    aws ssm put-parameter --region us-west-2 \
      --name /karaoke/workos_api_key --type SecureString --value 'sk_live_...'
    ```
-3. **WorkOS client ID:** store it in SSM Parameter Store (us-west-2) as the SecureString `/karaoke/workos_client_id` (the deploy fails if it is any other type). The API uses it as the OAuth `client_id` for AuthKit:
+3. **WorkOS client ID:** store it in SSM Parameter Store (us-west-2) as the SecureString `/karaoke/workos_client_id` (the deploy fails if it is any other type). It must be the client ID of a WorkOS Connect OAuth application (Dashboard → Applications) in the same environment as the API key. The API uses it as the OAuth `client_id` for AuthKit:
    ```sh
    aws ssm put-parameter --region us-west-2 \
      --name /karaoke/workos_client_id --type SecureString --value 'client_...'
    ```
-4. **WorkOS dashboard:** enable AuthKit with email sign-up allowed, and copy your AuthKit domain (Dashboard → Domains, e.g. `your-app.authkit.app`). The deploy creates the organization `karaoke-<domain>` and a first-party OAuth application with the same name. It also registers `https://karaoke.<domain>/auth/callback` on that application.
+4. **WorkOS dashboard:** enable AuthKit with email sign-up allowed, and copy your AuthKit domain (Dashboard → Domains, e.g. `your-app.authkit.app`). The deploy creates the organization `karaoke-<domain>`. It also sets `https://karaoke.<domain>/auth/callback` as the default redirect URI on the application that owns `/karaoke/workos_client_id`, and keeps any other redirect URIs already on that application (for example, local development callbacks). If the client ID doesn't match a Connect OAuth application, the deploy fails.
 5. **Google Cloud:**
    - Create a browser key for the **Maps JavaScript API** and **Places API (New)**, restricted to the `https://karaoke.<domain>/*` referrer.
    - Create a server key for the **YouTube Data API v3**. The default quota of 10,000 units a day covers about 100 searches. The API debounces and caches searches, but a busy venue will need a quota increase.
