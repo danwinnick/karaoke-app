@@ -1,7 +1,16 @@
-# The WorkOS API key is created by hand in Secrets Manager before the first deploy.
-# The secret value may be the raw key (sk_...) or JSON: {"api_key": "sk_..."}.
-data "aws_secretsmanager_secret" "karaoke_workos_api_key" {
-  name = "karaoke/workos_api_key"
+# The WorkOS API key is created by hand in SSM Parameter Store before the first deploy,
+# as a SecureString. The value may be the raw key (sk_...) or JSON: {"api_key": "sk_..."}.
+# The Lambdas read it at runtime, so the key itself never lands in state or env vars.
+data "aws_ssm_parameter" "karaoke_workos_api_key" {
+  name            = "/karaoke/workos_api_key"
+  with_decryption = false
+
+  lifecycle {
+    postcondition {
+      condition     = self.type == "SecureString"
+      error_message = "SSM parameter /karaoke/workos_api_key must be a SecureString."
+    }
+  }
 }
 
 # The WorkOS client ID is created by hand in SSM Parameter Store before the first deploy,
@@ -21,6 +30,7 @@ data "archive_file" "karaoke_workos_bootstrap" {
   type        = "zip"
   source_dir  = "${path.module}/../backend/workos-bootstrap"
   output_path = "${path.module}/build/karaoke-workos-bootstrap.zip"
+  excludes    = ["**/__pycache__/**"]
 }
 
 resource "aws_iam_role" "karaoke_workos_bootstrap" {
@@ -35,8 +45,8 @@ resource "aws_iam_role_policy_attachment" "karaoke_workos_bootstrap_logs" {
 
 data "aws_iam_policy_document" "karaoke_workos_bootstrap" {
   statement {
-    actions   = ["secretsmanager:GetSecretValue"]
-    resources = [data.aws_secretsmanager_secret.karaoke_workos_api_key.arn]
+    actions   = ["ssm:GetParameter"]
+    resources = [data.aws_ssm_parameter.karaoke_workos_api_key.arn]
   }
 }
 
@@ -54,7 +64,7 @@ resource "aws_cloudwatch_log_group" "karaoke_workos_bootstrap" {
 resource "aws_lambda_function" "karaoke_workos_bootstrap" {
   function_name    = "karaoke-workos-bootstrap"
   role             = aws_iam_role.karaoke_workos_bootstrap.arn
-  runtime          = "nodejs22.x"
+  runtime          = "python3.12"
   architectures    = ["arm64"]
   handler          = "index.handler"
   filename         = data.archive_file.karaoke_workos_bootstrap.output_path
@@ -63,7 +73,7 @@ resource "aws_lambda_function" "karaoke_workos_bootstrap" {
 
   environment {
     variables = {
-      WORKOS_API_KEY_SECRET = data.aws_secretsmanager_secret.karaoke_workos_api_key.arn
+      WORKOS_API_KEY_PARAM = data.aws_ssm_parameter.karaoke_workos_api_key.name
     }
   }
 

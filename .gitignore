@@ -4,5 +4,5 @@
 *.tfplan
 tfplan
 terraform/build/
-node_modules/
+__pycache__/
 .DS_Store

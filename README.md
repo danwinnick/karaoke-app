@@ -19,9 +19,9 @@ Terraform ─▶ karaoke-workos-bootstrap Lambda ─▶ WorkOS: creates the orga
 | Path | What it is |
 | --- | --- |
 | `terraform/` | All infrastructure. Every resource name and label is prefixed `karaoke`. State: `s3://karaoke-tf-state`, region `us-west-2`. |
-| `backend/api/` | `karaoke-api` Lambda (Node 22, no dependencies to install; the AWS SDK ships with the runtime). |
-| `backend/workos-bootstrap/` | Lambda that Terraform invokes on deploy to create or update the WorkOS organization and application. |
-| `backend/test/` | Unit tests for the queue, tip boost, night rollover, sessions, and title cleanup (`cd backend && npm test`). |
+| `backend/api/` | `karaoke-api` Lambda (Python 3.12, no dependencies to install; boto3 ships with the runtime). |
+| `backend/workos-bootstrap/` | Python 3.12 Lambda that Terraform invokes on deploy to create or update the WorkOS organization and application. |
+| `backend/test/` | Unit tests for the queue, tip boost, night rollover, sessions, and title cleanup (`cd backend && python3.12 -m unittest discover -s test`). |
 | `frontend/` | Static HTML/CSS/JS, no build step. |
 
 ### Data model
@@ -37,10 +37,10 @@ A "night" is a calendar date in `night_timezone` (default `America/Los_Angeles`)
 ## One-time setup
 
 1. **State bucket:** make sure the S3 bucket `karaoke-tf-state` exists in `us-west-2`.
-2. **WorkOS API key:** store it in AWS Secrets Manager (us-west-2) as `karaoke/workos_api_key`, either as the raw `sk_...` string or as `{"api_key":"sk_..."}`:
+2. **WorkOS API key:** store it in SSM Parameter Store (us-west-2) as the SecureString `/karaoke/workos_api_key`, either as the raw `sk_...` string or as `{"api_key":"sk_..."}`:
    ```sh
-   aws secretsmanager create-secret --region us-west-2 \
-     --name karaoke/workos_api_key --secret-string 'sk_live_...'
+   aws ssm put-parameter --region us-west-2 \
+     --name /karaoke/workos_api_key --type SecureString --value 'sk_live_...'
    ```
 3. **WorkOS client ID:** store it in SSM Parameter Store (us-west-2) as the SecureString `/karaoke/workos_client_id` (the deploy fails if it is any other type). The API uses it as the OAuth `client_id` for AuthKit:
    ```sh
