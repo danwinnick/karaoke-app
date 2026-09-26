@@ -59,7 +59,6 @@ A "night" is a calendar date in `night_timezone` (default `America/Los_Angeles`)
    | Secret | `AWS_SECRET_ACCESS_KEY` | Deploy credentials |
    | Secret | `GOOGLE_MAPS_API_KEY` | Browser key from step 5 |
    | Secret | `YOUTUBE_API_KEY` | Server key from step 5 |
-   | Variable | `HOSTED_ZONE_ID` | Route53 zone ID for the `domain` Terraform variable (default `danwinnick.com`) |
    | Variable | `WORKOS_AUTHKIT_DOMAIN` | e.g. `your-app.authkit.app` |
 
 ## Deploying
@@ -70,7 +69,7 @@ To deploy by hand:
 
 ```sh
 cd terraform
-export TF_VAR_hosted_zone_id=Z123 TF_VAR_workos_authkit_domain=your-app.authkit.app \
+export TF_VAR_workos_authkit_domain=your-app.authkit.app \
        TF_VAR_google_maps_api_key=... TF_VAR_youtube_api_key=...
 terraform init && terraform apply
 ```

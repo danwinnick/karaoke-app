@@ -7,6 +7,7 @@ variable "domain" {
 variable "hosted_zone_id" {
   description = "Route53 hosted zone ID for var.domain."
   type        = string
+  default     = "Z0011141118IUT41PGF3G"
 }
 
 variable "workos_authkit_domain" {
