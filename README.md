@@ -42,10 +42,10 @@ A "night" is a calendar date in `night_timezone` (default `America/Los_Angeles`)
    aws secretsmanager create-secret --region us-west-2 \
      --name karaoke/workos_api_key --secret-string 'sk_live_...'
    ```
-3. **WorkOS client ID:** store it in SSM Parameter Store (us-west-2) as `/karaoke/workos_client_id`. The API uses it as the OAuth `client_id` for AuthKit:
+3. **WorkOS client ID:** store it in SSM Parameter Store (us-west-2) as the SecureString `/karaoke/workos_client_id` (the deploy fails if it is any other type). The API uses it as the OAuth `client_id` for AuthKit:
    ```sh
    aws ssm put-parameter --region us-west-2 \
-     --name /karaoke/workos_client_id --type String --value 'client_...'
+     --name /karaoke/workos_client_id --type SecureString --value 'client_...'
    ```
 4. **WorkOS dashboard:** enable AuthKit with email sign-up allowed, and copy your AuthKit domain (Dashboard → Domains, e.g. `your-app.authkit.app`). The deploy creates the organization `karaoke-<domain>` and a first-party OAuth application with the same name. It also registers `https://karaoke.<domain>/auth/callback` on that application.
 5. **Google Cloud:**
@@ -59,8 +59,7 @@ A "night" is a calendar date in `night_timezone` (default `America/Los_Angeles`)
    | Secret | `AWS_SECRET_ACCESS_KEY` | Deploy credentials |
    | Secret | `GOOGLE_MAPS_API_KEY` | Browser key from step 5 |
    | Secret | `YOUTUBE_API_KEY` | Server key from step 5 |
-   | Variable | `DOMAIN` | e.g. `example.com` |
-   | Variable | `HOSTED_ZONE_ID` | Route53 zone ID for `DOMAIN` |
+   | Variable | `HOSTED_ZONE_ID` | Route53 zone ID for the `domain` Terraform variable (default `danwinnick.com`) |
    | Variable | `WORKOS_AUTHKIT_DOMAIN` | e.g. `your-app.authkit.app` |
 
 ## Deploying
@@ -71,7 +70,7 @@ To deploy by hand:
 
 ```sh
 cd terraform
-export TF_VAR_domain=example.com TF_VAR_hosted_zone_id=Z123 TF_VAR_workos_authkit_domain=your-app.authkit.app \
+export TF_VAR_hosted_zone_id=Z123 TF_VAR_workos_authkit_domain=your-app.authkit.app \
        TF_VAR_google_maps_api_key=... TF_VAR_youtube_api_key=...
 terraform init && terraform apply
 ```

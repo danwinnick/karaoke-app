@@ -4,10 +4,17 @@ data "aws_secretsmanager_secret" "karaoke_workos_api_key" {
   name = "karaoke/workos_api_key"
 }
 
-# The WorkOS client ID is created by hand in SSM Parameter Store before the first deploy.
-# It is the client_id the API uses for the AuthKit OAuth flow.
+# The WorkOS client ID is created by hand in SSM Parameter Store before the first deploy,
+# as a SecureString. It is the client_id the API uses for the AuthKit OAuth flow.
 data "aws_ssm_parameter" "karaoke_workos_client_id" {
   name = "/karaoke/workos_client_id"
+
+  lifecycle {
+    postcondition {
+      condition     = self.type == "SecureString"
+      error_message = "SSM parameter /karaoke/workos_client_id must be a SecureString."
+    }
+  }
 }
 
 data "archive_file" "karaoke_workos_bootstrap" {

@@ -1,6 +1,7 @@
 variable "domain" {
-  description = "Apex domain, e.g. example.com. The app is served at karaoke.<domain>."
+  description = "Apex domain name. The app is served at karaoke.<domain>."
   type        = string
+  default     = "danwinnick.com"
 }
 
 variable "hosted_zone_id" {
