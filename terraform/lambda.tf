@@ -1,3 +1,17 @@
+# Browser key for the Google Maps JavaScript API with the Places API (New) enabled, restricted
+# to https://karaoke.<domain>/* referrers. Created by hand in SSM Parameter Store before the
+# first deploy.
+data "aws_ssm_parameter" "karaoke_google_api_key" {
+  name = "/karaoke/google_api_key"
+
+  lifecycle {
+    postcondition {
+      condition     = trimspace(self.value) != ""
+      error_message = "SSM parameter /karaoke/google_api_key is empty."
+    }
+  }
+}
+
 resource "random_password" "karaoke_session_secret" {
   length  = 64
   special = false
@@ -96,7 +110,7 @@ resource "aws_lambda_function" "karaoke_api" {
       WORKOS_CLIENT_ID     = local.workos_client_id
       WORKOS_ORG_ID        = local.workos.organization_id
       SESSION_SECRET       = random_password.karaoke_session_secret.result
-      GOOGLE_MAPS_API_KEY  = var.google_maps_api_key
+      GOOGLE_MAPS_API_KEY  = data.aws_ssm_parameter.karaoke_google_api_key.value
       YOUTUBE_API_KEY      = var.youtube_api_key
       NIGHT_TIMEZONE       = var.night_timezone
     }

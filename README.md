@@ -51,7 +51,11 @@ A "night" is a calendar date in `night_timezone` (default `America/Los_Angeles`)
    ```
 4. **WorkOS dashboard:** under Authentication, enable **Google OAuth** (add your own Google OAuth client for production). You can turn off every other method; only singers use WorkOS, and the API rejects any login that isn't Google. The deploy creates the organization `karaoke-<domain>` and registers `https://karaoke.<domain>/auth/callback` as a redirect URI, keeping any others already there (for example, local development callbacks).
 5. **Google Cloud:**
-   - Create a browser key for the **Maps JavaScript API** and **Places API (New)**, restricted to the `https://karaoke.<domain>/*` referrer.
+   - Create a browser key for the **Maps JavaScript API** and **Places API (New)**, restricted to the `https://karaoke.<domain>/*` referrer, and store it in SSM Parameter Store (us-west-2) as `/karaoke/google_api_key`:
+     ```sh
+     aws ssm put-parameter --region us-west-2 \
+       --name /karaoke/google_api_key --type SecureString --value 'AIza...'
+     ```
    - Create a server key for the **YouTube Data API v3**. The default quota of 10,000 units a day covers about 100 searches. The API debounces and caches searches, but a busy venue will need a quota increase.
 6. **Amazon SES:** the deploy verifies `karaoke.<domain>` as an SES identity (DKIM records in Route53) and sends DJ codes from `no-reply@karaoke.<domain>`. New AWS accounts are in the SES sandbox and can only send to verified addresses, so request production access once (SES console → Account dashboard → Request production access, region us-west-2).
 7. **GitHub repository settings:**
@@ -60,7 +64,6 @@ A "night" is a calendar date in `night_timezone` (default `America/Los_Angeles`)
    | --- | --- | --- |
    | Secret | `AWS_ACCESS_KEY_ID` | Deploy credentials |
    | Secret | `AWS_SECRET_ACCESS_KEY` | Deploy credentials |
-   | Secret | `GOOGLE_MAPS_API_KEY` | Browser key from step 5 |
    | Secret | `YOUTUBE_API_KEY` | Server key from step 5 |
 
 ## Deploying
@@ -71,7 +74,7 @@ To deploy by hand:
 
 ```sh
 cd terraform
-export TF_VAR_google_maps_api_key=... TF_VAR_youtube_api_key=...
+export TF_VAR_youtube_api_key=...
 terraform init && terraform apply
 ```
 

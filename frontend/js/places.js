@@ -52,6 +52,10 @@ export function placePicker({ host, loading, chosen }) {
     show,
     async mount(key) {
       if (mounted) return;
+      if (!key) {
+        loading.textContent = 'Address search is not configured (missing Google Maps API key).';
+        return;
+      }
       mounted = true;
       try {
         await loadMaps(key);
