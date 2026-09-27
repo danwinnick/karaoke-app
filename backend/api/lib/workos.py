@@ -4,7 +4,7 @@ import os
 import secrets
 import urllib.error
 import urllib.request
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 import boto3
 
@@ -94,3 +94,29 @@ def ensure_membership(user_id):
     except WorkOSError as err:
         if not 400 <= err.status < 500:
             raise
+
+
+def _find_user(email, organization_id=None):
+    params = {'email': email, 'limit': 1}
+    if organization_id:
+        params['organization_id'] = organization_id
+    users = _workos('GET', f'/user_management/users?{urlencode(params, quote_via=quote)}').get('data') or []
+    return users[0] if users else None
+
+
+# The WorkOS user with this email if they belong to the deployment's organization, else None.
+def find_org_user(email):
+    return _find_user(email, os.environ['WORKOS_ORG_ID'])
+
+
+# Signs up a DJ whose email was just verified with a login code: reuses their WorkOS user if
+# one exists, otherwise creates it, then adds them to the deployment's organization.
+def create_org_user(email, first_name, last_name):
+    user = _find_user(email) or _workos('POST', '/user_management/users', {
+        'email': email,
+        'first_name': first_name,
+        'last_name': last_name or None,
+        'email_verified': True,
+    })
+    ensure_membership(user['id'])
+    return user

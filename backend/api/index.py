@@ -24,7 +24,15 @@ from lib.night import night_date
 from lib.queue import TIP_POSITION, boost_order, build_queue, singer_position, tips_for_dj
 from lib.session import b64url_encode, sign_token, verify_token
 from lib.login_code import code_matches, hash_code, new_code, normalize_email, send_code
-from lib.workos import authenticate_code, authorize_url, ensure_membership, pkce_pair
+from lib.workos import (
+    WorkOSError,
+    authenticate_code,
+    authorize_url,
+    create_org_user,
+    ensure_membership,
+    find_org_user,
+    pkce_pair,
+)
 from lib.youtube import search_karaoke
 
 logger = logging.getLogger()
@@ -104,7 +112,8 @@ def require_singer(event):
 
 # ---- /auth -----------------------------------------------------------------
 # Each email belongs to exactly one role, fixed the first time it logs in. Singers log in
-# with Google (via WorkOS); DJs log in with a one-time code emailed through SES.
+# with Google (via WorkOS); DJs are WorkOS organization members who log in with a one-time
+# code emailed through SES.
 
 
 def login(event):
@@ -156,20 +165,41 @@ def callback(event):
     )
 
 
-def dj_request_code(event):
-    email = normalize_email(parse_body(event).get('email'))
+def require_dj_email(email):
     if not email:
         raise HttpError(400, 'Enter a valid email')
-
     login_record = db.get_login(email)
     # Singers from before roles were locked have no login record yet.
     if (login_record and login_record['role'] != 'dj') or (not login_record and db.find_singer_by_email(email)):
         raise HttpError(409, 'This email belongs to a singer account. Singers log in with Google.')
 
+
+# First and last name from the signup form, or None when the form wasn't sent.
+def signup_names(body):
+    if body.get('firstName') is None:
+        return None
+    last = body.get('lastName')
+    return require_string(body.get('firstName'), 'First name', 100), last.strip()[:100] if isinstance(last, str) else ''
+
+
+# DJs are users in the deployment's WorkOS organization. An email that isn't in it yet gets
+# {'signup': True} back, and the client resends it with the signup form's names.
+def dj_request_code(event):
+    body = parse_body(event)
+    email = normalize_email(body.get('email'))
+    require_dj_email(email)
+    if not find_org_user(email) and not signup_names(body):
+        return json_response(200, {'signup': True})
+
     code = new_code()
     if not db.put_login_code(email, hash_code(SECRET, email, code), CODE_TTL, CODE_RESEND):
         raise HttpError(429, 'We just sent you a code. Wait a minute before asking for another.')
-    send_code(os.environ['SES_FROM_ADDRESS'], email, code, CODE_TTL // 60)
+    try:
+        send_code(os.environ['SES_FROM_ADDRESS'], email, code, CODE_TTL // 60)
+    except ClientError:
+        logger.exception('Could not send login code')
+        db.consume_login_code(email)
+        raise HttpError(502, "We couldn't email a code to that address. Try again later.")
     return json_response(200, {'sent': True})
 
 
@@ -180,6 +210,12 @@ def dj_verify_code(event):
     if not email or not re.fullmatch(r'[0-9]{6}', code):
         raise HttpError(400, 'Enter the 6-digit code from your email')
 
+    # Looked up before the code is used, so a missing signup doesn't burn it.
+    workos_user = find_org_user(email)
+    names = None if workos_user else signup_names(body)
+    if not workos_user and not names:
+        raise HttpError(400, 'Sign up with your name first.')
+
     record = db.attempt_login_code(email)
     if not record or record['expiresAt'] <= time.time():
         raise HttpError(400, 'That code has expired. Request a new one.')
@@ -188,16 +224,20 @@ def dj_verify_code(event):
     if not code_matches(SECRET, email, code, record.get('codeHash')) or not db.consume_login_code(email):
         raise HttpError(400, 'That code is not right. Check your email and try again.')
 
+    if not workos_user:
+        workos_user = create_org_user(email, *names)
+
     login_record = db.get_login(email)
     if not login_record:
         legacy = db.find_dj_by_email(email)
-        login_record = db.create_login(email, 'dj', legacy['djId'] if legacy else f'dj_{uuid.uuid4().hex}')
+        login_record = db.create_login(email, 'dj', legacy['djId'] if legacy else workos_user['id'])
     if login_record['role'] != 'dj':
         raise HttpError(409, 'This email belongs to a singer account. Singers log in with Google.')
 
     user_id = login_record['userId']
     dj = db.get_dj(user_id)
-    name = (dj or {}).get('name') or email.split('@')[0]
+    full_name = ' '.join(filter(None, [workos_user.get('first_name'), workos_user.get('last_name')]))
+    name = (dj or {}).get('name') or full_name or email.split('@')[0]
     return json_response(
         200,
         {'redirect': '/dj.html' if dj else '/dj-signup.html'},
@@ -546,6 +586,9 @@ def handler(event, context):
         return route(event)
     except HttpError as err:
         return json_response(err.status, {'error': str(err)})
+    except WorkOSError:
+        logger.exception('WorkOS request failed')
+        return json_response(502, {'error': "We couldn't reach the login service. Try again."})
     except ClientError as err:
         if err.response.get('Error', {}).get('Code') == 'ConditionalCheckFailedException':
             return json_response(409, {'error': 'The queue changed while you were looking. Refresh and try again.'})

@@ -38,6 +38,16 @@
           <button id="dj-email-submit" class="btn btn-primary btn-block" type="submit">Email me a login code</button>
         </form>
 
+        <form id="dj-signup-form" class="form" novalidate hidden>
+          <p class="small" id="dj-signup-intro"></p>
+          <label class="label" for="dj-first-name">First name</label>
+          <input id="dj-first-name" class="input" name="firstName" maxlength="100" required autocomplete="given-name" />
+          <label class="label" for="dj-last-name">Last name</label>
+          <input id="dj-last-name" class="input" name="lastName" maxlength="100" autocomplete="family-name" />
+          <button id="dj-signup-submit" class="btn btn-primary btn-block" type="submit">Sign up and email me a code</button>
+          <button id="dj-signup-back" class="btn btn-ghost btn-block" type="button">Use a different email</button>
+        </form>
+
         <form id="dj-code-form" class="form" novalidate hidden>
           <p class="small" id="dj-code-sent"></p>
           <label class="label" for="dj-code">6-digit code</label>
@@ -56,7 +66,7 @@
         </form>
 
         <p id="dj-error" class="banner banner-error" hidden></p>
-        <p class="small">New here? Log in and we'll set up your DJ profile.</p>
+        <p class="small">New here? Enter your email and we'll sign you up.</p>
         <button class="btn btn-ghost btn-block" type="button" data-role="">← Back</button>
       </section>
     </main>
