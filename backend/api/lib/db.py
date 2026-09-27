@@ -138,10 +138,16 @@ def put_dj(dj):
     return item
 
 
+# What singers see. `name` is the DJ's real name, except for DJs from before nicknames,
+# whose only name was the one they chose to show singers.
+def dj_public_name(dj):
+    return dj.get('nickname') or dj.get('name')
+
+
 def list_djs():
     djs = []
     kwargs = {
-        'ProjectionExpression': 'djId, #n, address, lat, lng',
+        'ProjectionExpression': 'djId, #n, nickname, address, lat, lng',
         'ExpressionAttributeNames': {'#n': 'name'},
     }
     while True:
@@ -159,7 +165,7 @@ def get_dj_names(dj_ids):
         request = {
             DJ_TABLE: {
                 'Keys': [{'djId': dj_id} for dj_id in ids[i : i + 100]],
-                'ProjectionExpression': 'djId, #n',
+                'ProjectionExpression': 'djId, #n, nickname',
                 'ExpressionAttributeNames': {'#n': 'name'},
             }
         }
@@ -167,7 +173,7 @@ def get_dj_names(dj_ids):
         while request:
             res = _dynamodb.batch_get_item(RequestItems=request)
             for dj in res['Responses'].get(DJ_TABLE, []):
-                names[dj['djId']] = dj.get('name')
+                names[dj['djId']] = dj_public_name(dj)
             request = res.get('UnprocessedKeys')
     return names
 

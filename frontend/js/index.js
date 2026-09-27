@@ -1,4 +1,5 @@
 import { api, ApiError, homeFor } from './api.js';
+import { placePicker } from './places.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -26,8 +27,14 @@ api('/api/me')
 // ---- DJ email code login ----------------------------------------------------
 
 let email = '';
-// Names from the signup form, sent again with the code so the account is created once it's verified.
-let names = {};
+// The signup form's details, sent again with the code so the account and DJ profile are
+// created once it's verified.
+let signup = {};
+const picker = placePicker({
+  host: $('dj-address-host'),
+  loading: $('dj-address-loading'),
+  chosen: $('dj-address-chosen'),
+});
 
 function showError(message) {
   $('dj-error').textContent = message;
@@ -63,11 +70,16 @@ $('dj-email-form').addEventListener('submit', (e) => {
     const value = $('dj-email').value.trim();
     const res = await api('/auth/dj/code', { method: 'POST', body: { email: value } });
     email = value;
-    names = {};
+    signup = {};
     if (res.signup) {
       $('dj-signup-intro').textContent = `There's no DJ account for ${email} yet. Sign up to get started.`;
       showForm('dj-signup-form');
       $('dj-first-name').focus();
+      api('/api/config')
+        .then((config) => picker.mount(config.googleMapsApiKey))
+        .catch(() => {
+          $('dj-address-loading').textContent = 'Address search failed to load. Refresh to try again.';
+        });
       return;
     }
     showCodeForm();
@@ -77,10 +89,17 @@ $('dj-email-form').addEventListener('submit', (e) => {
 $('dj-signup-form').addEventListener('submit', (e) => {
   e.preventDefault();
   submit($('dj-signup-submit'), async () => {
-    const next = { firstName: $('dj-first-name').value.trim(), lastName: $('dj-last-name').value.trim() };
+    const next = {
+      firstName: $('dj-first-name').value.trim(),
+      lastName: $('dj-last-name').value.trim(),
+      nickname: $('dj-nickname').value.trim(),
+      ...picker.place,
+    };
     if (!next.firstName) throw new ApiError(400, 'Enter your first name');
+    if (!next.nickname) throw new ApiError(400, 'Enter your DJ nickname');
+    if (!picker.place) throw new ApiError(400, 'Search for your venue address and pick it from the list');
     await api('/auth/dj/code', { method: 'POST', body: { email, ...next } });
-    names = next;
+    signup = next;
     showCodeForm();
   });
 });
@@ -88,7 +107,7 @@ $('dj-signup-form').addEventListener('submit', (e) => {
 $('dj-code-form').addEventListener('submit', (e) => {
   e.preventDefault();
   submit($('dj-code-submit'), async () => {
-    const res = await api('/auth/dj/verify', { method: 'POST', body: { email, code: $('dj-code').value.trim(), ...names } });
+    const res = await api('/auth/dj/verify', { method: 'POST', body: { email, code: $('dj-code').value.trim(), ...signup } });
     window.location.href = res.redirect;
   });
 });

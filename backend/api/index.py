@@ -174,21 +174,41 @@ def require_dj_email(email):
         raise HttpError(409, 'This email belongs to a singer account. Singers log in with Google.')
 
 
-# First and last name from the signup form, or None when the form wasn't sent.
-def signup_names(body):
+# The DJ's nickname and venue, as picked from Google Places autocomplete.
+def dj_details(body):
+    lat = _finite(body.get('lat'))
+    lng = _finite(body.get('lng'))
+    if lat is None or lng is None:
+        raise HttpError(400, 'Pick your address from the suggestions')
+    place_id = body.get('placeId')
+    return {
+        'nickname': require_string(body.get('nickname'), 'DJ nickname', 100),
+        'address': require_string(body.get('address'), 'Address', 300),
+        'placeId': place_id[:300] if isinstance(place_id, str) else None,
+        'lat': lat,
+        'lng': lng,
+    }
+
+
+# Names and DJ details from the signup form, or None when the form wasn't sent.
+def signup_profile(body):
     if body.get('firstName') is None:
         return None
     last = body.get('lastName')
-    return require_string(body.get('firstName'), 'First name', 100), last.strip()[:100] if isinstance(last, str) else ''
+    return {
+        'firstName': require_string(body.get('firstName'), 'First name', 100),
+        'lastName': last.strip()[:100] if isinstance(last, str) else '',
+        **dj_details(body),
+    }
 
 
 # DJs are users in the deployment's WorkOS organization. An email that isn't in it yet gets
-# {'signup': True} back, and the client resends it with the signup form's names.
+# {'signup': True} back, and the client resends it with the signup form's details.
 def dj_request_code(event):
     body = parse_body(event)
     email = normalize_email(body.get('email'))
     require_dj_email(email)
-    if not find_org_user(email) and not signup_names(body):
+    if not find_org_user(email) and not signup_profile(body):
         return json_response(200, {'signup': True})
 
     code = new_code()
@@ -212,8 +232,8 @@ def dj_verify_code(event):
 
     # Looked up before the code is used, so a missing signup doesn't burn it.
     workos_user = find_org_user(email)
-    names = None if workos_user else signup_names(body)
-    if not workos_user and not names:
+    profile = None if workos_user else signup_profile(body)
+    if not workos_user and not profile:
         raise HttpError(400, 'Sign up with your name first.')
 
     record = db.attempt_login_code(email)
@@ -225,7 +245,7 @@ def dj_verify_code(event):
         raise HttpError(400, 'That code is not right. Check your email and try again.')
 
     if not workos_user:
-        workos_user = create_org_user(email, *names)
+        workos_user = create_org_user(email, profile['firstName'], profile['lastName'])
 
     login_record = db.get_login(email)
     if not login_record:
@@ -238,6 +258,9 @@ def dj_verify_code(event):
     dj = db.get_dj(user_id)
     full_name = ' '.join(filter(None, [workos_user.get('first_name'), workos_user.get('last_name')]))
     name = (dj or {}).get('name') or full_name or email.split('@')[0]
+    if not dj and profile:
+        details = {k: v for k, v in profile.items() if k not in ('firstName', 'lastName')}
+        dj = db.put_dj({'djId': user_id, 'name': name, 'email': email, **details})
     return json_response(
         200,
         {'redirect': '/dj.html' if dj else '/dj-signup.html'},
@@ -269,7 +292,11 @@ def me(event):
 
 def list_djs(event):
     require_role(event)
-    djs = sorted(db.list_djs(), key=lambda d: (d.get('name') or '').casefold())
+    djs = [
+        {'djId': d['djId'], 'name': db.dj_public_name(d), 'address': d.get('address'), 'lat': d.get('lat'), 'lng': d.get('lng')}
+        for d in db.list_djs()
+    ]
+    djs.sort(key=lambda d: (d['name'] or '').casefold())
     return json_response(200, {'djs': djs})
 
 
@@ -288,21 +315,13 @@ def _finite(value):
 
 def dj_profile(event):
     session = require_role(event, 'dj')
-    body = parse_body(event)
-    lat = _finite(body.get('lat'))
-    lng = _finite(body.get('lng'))
-    if lat is None or lng is None:
-        raise HttpError(400, 'Pick your address from the suggestions')
-
-    place_id = body.get('placeId')
+    details = dj_details(parse_body(event))
+    existing = db.get_dj(session['sub']) or {}
     dj = db.put_dj({
         'djId': session['sub'],
-        'name': require_string(body.get('name'), 'Name', 100),
+        'name': existing.get('name') or session.get('name'),
         'email': session['email'],
-        'address': require_string(body.get('address'), 'Address', 300),
-        'placeId': place_id[:300] if isinstance(place_id, str) else None,
-        'lat': lat,
-        'lng': lng,
+        **details,
     })
     return json_response(200, {'dj': dj})
 
@@ -380,7 +399,7 @@ def singer_status(singer_id):
     position = singer_position(queue, singer_id)
     return {
         'date': date,
-        'dj': dj and {'djId': dj['djId'], 'name': dj.get('name'), 'address': dj.get('address')},
+        'dj': dj and {'djId': dj['djId'], 'name': db.dj_public_name(dj), 'address': dj.get('address')},
         'position': position,
         'queueLength': len(queue),
         'nowPlaying': now_playing and {

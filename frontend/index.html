@@ -44,6 +44,14 @@
           <input id="dj-first-name" class="input" name="firstName" maxlength="100" required autocomplete="given-name" />
           <label class="label" for="dj-last-name">Last name</label>
           <input id="dj-last-name" class="input" name="lastName" maxlength="100" autocomplete="family-name" />
+          <label class="label" for="dj-nickname">DJ nickname</label>
+          <input id="dj-nickname" class="input" name="nickname" maxlength="100" required autocomplete="nickname" />
+          <p class="small">Singers see your nickname, never your real name.</p>
+          <span class="label" id="dj-address-label">Venue address</span>
+          <div id="dj-address-host" class="address-host" aria-labelledby="dj-address-label">
+            <p class="small" id="dj-address-loading">Loading address search…</p>
+          </div>
+          <p id="dj-address-chosen" class="address-chosen small" hidden></p>
           <button id="dj-signup-submit" class="btn btn-primary btn-block" type="submit">Sign up and email me a code</button>
           <button id="dj-signup-back" class="btn btn-ghost btn-block" type="button">Use a different email</button>
         </form>

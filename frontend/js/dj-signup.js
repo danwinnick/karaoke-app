@@ -1,58 +1,14 @@
 import { api, handleAuthError, homeFor } from './api.js';
+import { placePicker } from './places.js';
 
 const $ = (id) => document.getElementById(id);
-let place = null;
-
-function showPlace(next) {
-  place = next;
-  $('address-chosen').hidden = !place;
-  $('address-chosen').textContent = place ? `📍 ${place.address}` : '';
-}
-
-async function onPlace(selected) {
-  await selected.fetchFields({ fields: ['id', 'formattedAddress', 'location'] });
-  showPlace({
-    address: selected.formattedAddress,
-    lat: selected.location.lat(),
-    lng: selected.location.lng(),
-    placeId: selected.id,
-  });
-}
-
-// Google Places Autocomplete (Places API New).
-window.karaokeInitPlaces = async () => {
-  const { PlaceAutocompleteElement } = await google.maps.importLibrary('places');
-  const autocomplete = new PlaceAutocompleteElement();
-  autocomplete.id = 'address';
-  $('address-loading').remove();
-  $('address-host').append(autocomplete);
-
-  autocomplete.addEventListener('gmp-select', ({ placePrediction }) => onPlace(placePrediction.toPlace()));
-  // Older versions of the element emit gmp-placeselect instead.
-  autocomplete.addEventListener('gmp-placeselect', ({ place: selected }) => onPlace(selected));
-};
-
-function loadMaps(key) {
-  const script = document.createElement('script');
-  script.src = `https://maps.googleapis.com/maps/api/js?${new URLSearchParams({
-    key,
-    v: 'weekly',
-    libraries: 'places',
-    loading: 'async',
-    callback: 'karaokeInitPlaces',
-  })}`;
-  script.async = true;
-  script.onerror = () => {
-    $('address-loading').textContent = 'Address search failed to load. Refresh to try again.';
-  };
-  document.head.append(script);
-}
+const picker = placePicker({ host: $('address-host'), loading: $('address-loading'), chosen: $('address-chosen') });
 
 $('dj-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const error = $('form-error');
   error.hidden = true;
-  if (!place) {
+  if (!picker.place) {
     error.textContent = 'Search for your address and pick it from the list.';
     error.hidden = false;
     return;
@@ -61,7 +17,7 @@ $('dj-form').addEventListener('submit', async (e) => {
   try {
     await api('/api/dj/profile', {
       method: 'POST',
-      body: { name: $('name').value, ...place },
+      body: { nickname: $('nickname').value, ...picker.place },
     });
     window.location.href = '/dj.html';
   } catch (err) {
@@ -79,13 +35,14 @@ async function boot() {
       window.location.href = homeFor(me);
       return;
     }
-    $('name').value = me.dj?.name ?? me.user.name ?? '';
+    // DJs from before nicknames existed picked their public name as their "DJ name".
+    $('nickname').value = me.dj?.nickname ?? me.dj?.name ?? '';
     $('email').value = me.user.email ?? '';
     if (me.dj) {
       $('heading').textContent = 'Edit your DJ profile';
-      showPlace({ address: me.dj.address, lat: me.dj.lat, lng: me.dj.lng, placeId: me.dj.placeId });
+      picker.show({ address: me.dj.address, lat: me.dj.lat, lng: me.dj.lng, placeId: me.dj.placeId });
     }
-    loadMaps(config.googleMapsApiKey);
+    picker.mount(config.googleMapsApiKey);
   } catch (err) {
     handleAuthError(err, 'dj');
   }

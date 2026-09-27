@@ -3,7 +3,7 @@
 A karaoke queue for DJs and singers, served at `https://karaoke.<domain>`.
 
 - **Singers** log in with Google (and only Google), pick a DJ (sorted by distance when location is allowed), search YouTube for karaoke tracks, and see their spot in line. They get one virtual tip per night: it sends the DJ a 💲 and moves them up to #10 if they're further back. Every song they've picked is kept in a History tab. The singer UI is built for phones first.
-- **DJs** log in with any email address using a 6-digit code emailed to them through Amazon SES, then sign up with a name and venue address (Google Places autocomplete) and run the night's queue. The player popup plays the YouTube track, overlays the next 5 singers, and shows a 💲 when someone tips.
+- **DJs** log in with any email address using a 6-digit code emailed to them through Amazon SES, sign up with their name, a DJ nickname, and a venue address (Google Places autocomplete), and run the night's queue. Singers only ever see the nickname. The player popup plays the YouTube track, overlays the next 5 singers, and shows a 💲 when someone tips.
 
 ## Architecture
 
@@ -29,7 +29,7 @@ Terraform ─▶ karaoke-workos-bootstrap Lambda ─▶ WorkOS: creates the orga
 
 | Table | Key | Notes |
 | --- | --- | --- |
-| `karaoke-dj` | `djId` (`dj_<uuid>`; DJs from before email-code login keep their WorkOS user id) | `name`, `email`, `address`, `lat`, `lng`, `placeId` |
+| `karaoke-dj` | `djId` (`dj_<uuid>`; DJs from before email-code login keep their WorkOS user id) | `name` (real name, never shown to singers), `nickname` (shown to singers), `email`, `address`, `lat`, `lng`, `placeId` (Google Places). DJs from before nicknames have no `nickname`; their `name` is shown instead. |
 | `karaoke-singers` | `singerId` (WorkOS user id) | `name`, `email`, `currentDjId` |
 | `karaoke-auth` | `pk` | `user#<email>` locks an email to one role (`dj` or `singer`) and user id. `code#<email>` holds a DJ's pending login code as an HMAC, with `attempts`, `resendAfter`, and `expiresAt` (DynamoDB TTL). |
 | `karaoke-requested-songs` | `singerId` + `date` | One item per singer per night, holding `requestId`, `djId`, `singerName`, `songs[]` (each with `songId`, `videoId`, `title`, `status`, `order`), and `tip`. GSI `djId-date-index` serves the DJ's queue. Items are never deleted, which is what powers the singer's all-time history. |
@@ -79,7 +79,7 @@ terraform init && terraform apply
 
 - **Roles are locked:** every email belongs to exactly one role, fixed the first time it logs in (`karaoke-auth`). A singer's Google email can't be used to log in as a DJ, or the other way round, and there are no links to switch. Logged-in users who open the landing page or the other role's pages are sent back to their own page. Sessions are HMAC-signed, HttpOnly cookies that last 7 days.
 - **Singer login:** `/auth/login` redirects to WorkOS with `provider=GoogleOAuth` and PKCE. `/auth/callback` exchanges the code, rejects any `authentication_method` other than `GoogleOAuth`, and adds the user to the WorkOS organization.
-- **DJ login:** DJs are users in the WorkOS organization. `POST /auth/dj/code` first looks the email up in the organization; if it isn't there it returns `{"signup": true}` and the landing page shows a signup form (first and last name), which resends the request with the names. The API then sends a 6-digit code through SES (WorkOS sends no email). The WorkOS user is only created and added to the organization once `POST /auth/dj/verify` accepts the code, so nobody can sign up an email they don't control. Codes last 10 minutes, one can be requested per minute, and each code allows 5 guesses. `POST /auth/dj/verify` checks it, deletes it, and sets the session. A DJ who signed up before email-code login keeps their profile if their profile email matches.
+- **DJ login:** DJs are users in the WorkOS organization. `POST /auth/dj/code` first looks the email up in the organization; if it isn't there it returns `{"signup": true}` and the landing page shows a signup form (first and last name, DJ nickname, and venue address), which resends the request with those details. The API then sends a 6-digit code through SES (WorkOS sends no email). The WorkOS user is only created and added to the organization once `POST /auth/dj/verify` accepts the code, so nobody can sign up an email they don't control. Codes last 10 minutes, one can be requested per minute, and each code allows 5 guesses. `POST /auth/dj/verify` checks it, deletes it, saves the new DJ's profile from the signup details, and sets the session. A DJ who signed up before email-code login keeps their profile if their profile email matches.
 - New users land on `/dj-signup.html` or `/singer-signup.html`. The profile email is always the login email.
 - **Queue order:** each song carries a numeric `order` (the request timestamp). Your number is the position of your earliest queued song.
 - **Tips:** one per singer per night, enforced with a DynamoDB condition. If you're below #10, your next song's `order` is set halfway between #9 and #10, so you land at exactly #10. The DJ UI polls every 4s and shows a 💲 for each new tip, including over the player. Tips are virtual; no payments are involved.

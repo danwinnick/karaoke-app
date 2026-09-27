@@ -19,7 +19,7 @@ function tipBadge(entry) {
 
 function render(next) {
   state = next;
-  $('dj-name').textContent = state.dj.name;
+  $('dj-name').textContent = state.dj.nickname ?? state.dj.name;
   $('night').textContent = formatDate(state.date);
   $('queue-count').textContent = `(${state.queue.length})`;
 
