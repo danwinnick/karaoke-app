@@ -23,35 +23,43 @@
       <section id="role-singer" class="role-card" hidden>
         <h2>I'm a singer</h2>
         <p>Find your DJ, search karaoke tracks, and see your place in line.</p>
-        <a class="btn btn-primary btn-block" href="/auth/login?role=singer">Log in as a singer</a>
-        <p class="small">New here? Log in and we'll set up your singer profile.</p>
+        <a class="btn btn-primary btn-block" href="/auth/login">Continue with Google</a>
+        <p class="small">Singers log in with Google. New here? We'll set up your singer profile.</p>
         <button class="btn btn-ghost btn-block" type="button" data-role="">← Back</button>
       </section>
 
       <section id="role-dj" class="role-card" hidden>
         <h2>I'm a DJ</h2>
         <p>Run the queue and play tracks with the next singers on screen.</p>
-        <a class="btn btn-primary btn-block" href="/auth/login?role=dj">Log in as a DJ</a>
+
+        <form id="dj-email-form" class="form" novalidate>
+          <label class="label" for="dj-email">Email</label>
+          <input id="dj-email" class="input" name="email" type="email" maxlength="254" required autocomplete="email" />
+          <button id="dj-email-submit" class="btn btn-primary btn-block" type="submit">Email me a login code</button>
+        </form>
+
+        <form id="dj-code-form" class="form" novalidate hidden>
+          <p class="small" id="dj-code-sent"></p>
+          <label class="label" for="dj-code">6-digit code</label>
+          <input
+            id="dj-code"
+            class="input"
+            name="code"
+            inputmode="numeric"
+            pattern="[0-9]{6}"
+            maxlength="6"
+            required
+            autocomplete="one-time-code"
+          />
+          <button id="dj-code-submit" class="btn btn-primary btn-block" type="submit">Log in</button>
+          <button id="dj-code-back" class="btn btn-ghost btn-block" type="button">Use a different email</button>
+        </form>
+
+        <p id="dj-error" class="banner banner-error" hidden></p>
         <p class="small">New here? Log in and we'll set up your DJ profile.</p>
         <button class="btn btn-ghost btn-block" type="button" data-role="">← Back</button>
       </section>
     </main>
-    <script>
-      const error = new URLSearchParams(location.search).get('error');
-      if (error) {
-        const banner = document.getElementById('error');
-        banner.textContent = error;
-        banner.hidden = false;
-      }
-
-      function showRole(role) {
-        document.getElementById('choose-role').hidden = Boolean(role);
-        document.getElementById('role-singer').hidden = role !== 'singer';
-        document.getElementById('role-dj').hidden = role !== 'dj';
-      }
-      document.querySelectorAll('[data-role]').forEach((button) => {
-        button.addEventListener('click', () => showRole(button.dataset.role));
-      });
-    </script>
+    <script type="module" src="/js/index.js"></script>
   </body>
 </html>

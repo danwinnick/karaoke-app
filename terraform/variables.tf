@@ -10,11 +10,6 @@ variable "hosted_zone_id" {
   default     = "Z0011141118IUT41PGF3G"
 }
 
-variable "workos_authkit_domain" {
-  description = "AuthKit domain for the WorkOS environment (WorkOS dashboard > Domains), e.g. my-app.authkit.app. No scheme."
-  type        = string
-}
-
 variable "google_maps_api_key" {
   description = "Browser key for the Google Maps JavaScript API with the Places API (New) enabled. Restrict it to https://karaoke.<domain>/* referrers."
   type        = string

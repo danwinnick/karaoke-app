@@ -73,3 +73,26 @@ resource "aws_dynamodb_table" "karaoke_requested_songs" {
     enabled = true
   }
 }
+
+# Login state, keyed by pk:
+#   user#<email> - which role (dj or singer) and user id the email is locked to
+#   code#<email> - the hashed one-time code a DJ is logging in with; expired by TTL
+resource "aws_dynamodb_table" "karaoke_auth" {
+  name         = "karaoke-auth"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "pk"
+
+  attribute {
+    name = "pk"
+    type = "S"
+  }
+
+  ttl {
+    attribute_name = "expiresAt"
+    enabled        = true
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+}

@@ -26,10 +26,21 @@ export async function api(path, { method = 'GET', body } = {}) {
   return data;
 }
 
-// Redirects to login when the session is missing or has the wrong role.
+// Where a logged-in user belongs. Each account has exactly one role, fixed at first login.
+export function homeFor(me) {
+  if (me.role === 'dj') return me.dj ? '/dj.html' : '/dj-signup.html';
+  return me.singer ? '/singer.html' : '/singer-signup.html';
+}
+
+// Sends logged-out users to log in for this page's role. Anyone else (wrong role, or
+// signup not finished) goes to the landing page, which routes them to their own page.
 export function handleAuthError(err, role) {
-  if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
-    window.location.href = `/auth/login?role=${role}`;
+  if (err instanceof ApiError && err.status === 401) {
+    window.location.href = role === 'dj' ? '/?role=dj' : '/auth/login';
+    return true;
+  }
+  if (err instanceof ApiError && err.status === 403) {
+    window.location.href = '/';
     return true;
   }
   return false;

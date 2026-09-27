@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 import boto3
+from boto3.dynamodb.conditions import Attr
+from botocore.exceptions import ClientError
 
 from lib.session import b64url_decode, b64url_encode
 
@@ -15,10 +17,12 @@ DJ_TABLE = os.environ.get('DJ_TABLE')
 SINGERS_TABLE = os.environ.get('SINGERS_TABLE')
 SONGS_TABLE = os.environ.get('SONGS_TABLE')
 SONGS_DJ_INDEX = os.environ.get('SONGS_DJ_INDEX')
+AUTH_TABLE = os.environ.get('AUTH_TABLE')
 
 _djs = _dynamodb.Table(DJ_TABLE) if DJ_TABLE else None
 _singers = _dynamodb.Table(SINGERS_TABLE) if SINGERS_TABLE else None
 _songs = _dynamodb.Table(SONGS_TABLE) if SONGS_TABLE else None
+_auth = _dynamodb.Table(AUTH_TABLE) if AUTH_TABLE else None
 
 
 def now_iso():
@@ -39,6 +43,84 @@ def _clean(value):
     if isinstance(value, list):
         return [_clean(v) for v in value]
     return value
+
+
+def _condition_failed(err):
+    return err.response.get('Error', {}).get('Code') == 'ConditionalCheckFailedException'
+
+
+def _scan_first(table, **kwargs):
+    while True:
+        page = table.scan(**kwargs)
+        if page['Items']:
+            return page['Items'][0]
+        if 'LastEvaluatedKey' not in page:
+            return None
+        kwargs['ExclusiveStartKey'] = page['LastEvaluatedKey']
+
+
+# ---- Logins (one per email, locked to a role) + DJ login codes ---------------
+
+
+def get_login(email):
+    return _auth.get_item(Key={'pk': f'user#{email}'}).get('Item')
+
+
+# Claims the email for a role. If someone else claimed it first, returns their login.
+def create_login(email, role, user_id):
+    item = {'pk': f'user#{email}', 'email': email, 'role': role, 'userId': user_id, 'createdAt': now_iso()}
+    try:
+        _auth.put_item(Item=item, ConditionExpression='attribute_not_exists(pk)')
+        return item
+    except ClientError as err:
+        if not _condition_failed(err):
+            raise
+    return get_login(email)
+
+
+# Stores a new code unless one was sent too recently. Returns False when rate limited.
+def put_login_code(email, code_hash, ttl_seconds, resend_seconds):
+    now = int(time.time())
+    try:
+        _auth.put_item(
+            Item={
+                'pk': f'code#{email}',
+                'codeHash': code_hash,
+                'attempts': 0,
+                'resendAfter': now + resend_seconds,
+                'expiresAt': now + ttl_seconds,
+            },
+            ConditionExpression='attribute_not_exists(pk) OR resendAfter <= :now',
+            ExpressionAttributeValues={':now': now},
+        )
+        return True
+    except ClientError as err:
+        if not _condition_failed(err):
+            raise
+        return False
+
+
+# Counts a guess against the code before it is checked. Returns None when there is no code.
+def attempt_login_code(email):
+    try:
+        res = _auth.update_item(
+            Key={'pk': f'code#{email}'},
+            UpdateExpression='ADD attempts :one',
+            ConditionExpression='attribute_exists(pk)',
+            ExpressionAttributeValues={':one': 1},
+            ReturnValues='ALL_NEW',
+        )
+        return res['Attributes']
+    except ClientError as err:
+        if not _condition_failed(err):
+            raise
+        return None
+
+
+# Deletes the code. Returns False if it was already used by a concurrent request.
+def consume_login_code(email):
+    res = _auth.delete_item(Key={'pk': f'code#{email}'}, ReturnValues='ALL_OLD')
+    return bool(res.get('Attributes'))
 
 
 # ---- DJs -------------------------------------------------------------------
@@ -90,6 +172,11 @@ def get_dj_names(dj_ids):
     return names
 
 
+# DJs who signed up before email-code login are keyed by their old WorkOS user id.
+def find_dj_by_email(email):
+    return _scan_first(_djs, FilterExpression=Attr('email').eq(email), ProjectionExpression='djId')
+
+
 # ---- Singers ---------------------------------------------------------------
 
 
@@ -104,6 +191,10 @@ def upsert_singer(singer_id, name, email):
         ExpressionAttributeNames={'#n': 'name'},
         ExpressionAttributeValues={':name': name, ':email': email, ':now': now_iso()},
     )
+
+
+def find_singer_by_email(email):
+    return _scan_first(_singers, FilterExpression=Attr('email').eq(email), ProjectionExpression='singerId')
 
 
 def set_singer_dj(singer_id, dj_id):

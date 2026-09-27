@@ -1,4 +1,4 @@
-import { api, handleAuthError } from './api.js';
+import { api, handleAuthError, homeFor } from './api.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -10,7 +10,7 @@ $('singer-form').addEventListener('submit', async (e) => {
   try {
     await api('/api/singer/profile', {
       method: 'POST',
-      body: { name: $('name').value, email: $('email').value },
+      body: { name: $('name').value },
     });
     window.location.href = '/singer.html';
   } catch (err) {
@@ -25,11 +25,11 @@ async function boot() {
   try {
     const me = await api('/api/me');
     if (me.role !== 'singer') {
-      window.location.href = '/auth/login?role=singer';
+      window.location.href = homeFor(me);
       return;
     }
     $('name').value = me.singer?.name ?? me.user.name ?? '';
-    $('email').value = me.singer?.email ?? me.user.email ?? '';
+    $('email').value = me.user.email ?? '';
     if (me.singer) $('heading').textContent = 'Edit your singer profile';
   } catch (err) {
     handleAuthError(err, 'singer');

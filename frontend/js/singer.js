@@ -1,4 +1,4 @@
-import { api, el, formatDate, handleAuthError, toast } from './api.js';
+import { api, el, formatDate, handleAuthError, homeFor, toast } from './api.js';
 
 const $ = (id) => document.getElementById(id);
 const POLL_MS = 10000;
@@ -344,7 +344,7 @@ async function boot() {
   try {
     const me = await api('/api/me');
     if (me.role !== 'singer') {
-      window.location.href = '/auth/login?role=singer';
+      window.location.href = homeFor(me);
       return;
     }
     if (!me.singer) {

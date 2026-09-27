@@ -22,12 +22,11 @@
         <input id="name" class="input" name="name" maxlength="100" required autocomplete="nickname" />
 
         <label class="label" for="email">Email</label>
-        <input id="email" class="input" name="email" type="email" maxlength="254" required autocomplete="email" />
+        <input id="email" class="input" name="email" type="email" readonly />
 
         <p id="form-error" class="banner banner-error" hidden></p>
         <button id="submit" class="btn btn-primary btn-block" type="submit">Save and start singing</button>
       </form>
-      <p class="muted small center">Not a singer? <a class="link" href="/auth/login?role=dj">Log in as a DJ instead</a></p>
     </main>
     <script type="module" src="/js/singer-signup.js"></script>
   </body>

@@ -39,13 +39,20 @@ data "aws_iam_policy_document" "karaoke_api" {
       "dynamodb:Query",
       "dynamodb:Scan",
       "dynamodb:BatchGetItem",
+      "dynamodb:DeleteItem",
     ]
     resources = [
       aws_dynamodb_table.karaoke_dj.arn,
       aws_dynamodb_table.karaoke_singers.arn,
       aws_dynamodb_table.karaoke_requested_songs.arn,
       "${aws_dynamodb_table.karaoke_requested_songs.arn}/index/*",
+      aws_dynamodb_table.karaoke_auth.arn,
     ]
+  }
+
+  statement {
+    actions   = ["ses:SendEmail"]
+    resources = [aws_sesv2_email_identity.karaoke.arn]
   }
 
   statement {
@@ -83,10 +90,11 @@ resource "aws_lambda_function" "karaoke_api" {
       SINGERS_TABLE        = aws_dynamodb_table.karaoke_singers.name
       SONGS_TABLE          = aws_dynamodb_table.karaoke_requested_songs.name
       SONGS_DJ_INDEX       = "djId-date-index"
+      AUTH_TABLE           = aws_dynamodb_table.karaoke_auth.name
+      SES_FROM_ADDRESS     = "Karaoke <no-reply@${local.app_domain}>"
       WORKOS_API_KEY_PARAM = data.aws_ssm_parameter.karaoke_workos_api_key.name
       WORKOS_CLIENT_ID     = local.workos_client_id
       WORKOS_ORG_ID        = local.workos.organization_id
-      AUTHKIT_DOMAIN       = var.workos_authkit_domain
       SESSION_SECRET       = random_password.karaoke_session_secret.result
       GOOGLE_MAPS_API_KEY  = var.google_maps_api_key
       YOUTUBE_API_KEY      = var.youtube_api_key

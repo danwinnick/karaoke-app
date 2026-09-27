@@ -14,7 +14,8 @@ data "aws_ssm_parameter" "karaoke_workos_api_key" {
 }
 
 # The WorkOS client ID is created by hand in SSM Parameter Store before the first deploy,
-# as a SecureString. It is the client_id the API uses for the AuthKit OAuth flow.
+# as a SecureString. It is the environment's client ID (Dashboard > API Keys), which the
+# API uses for the singers' Google login through User Management.
 data "aws_ssm_parameter" "karaoke_workos_client_id" {
   name = "/karaoke/workos_client_id"
 
@@ -85,14 +86,13 @@ resource "aws_lambda_function" "karaoke_workos_bootstrap" {
 }
 
 # Idempotently creates (or finds) the WorkOS organization for this deployment and registers
-# the callback URL as the default redirect URI on the OAuth application that owns the client
-# ID in SSM, so AuthKit accepts the redirect the API sends. Re-runs whenever the input changes.
+# the callback URL as a User Management redirect URI, so WorkOS accepts the redirect the API
+# sends after Google login. Re-runs whenever the input changes.
 resource "aws_lambda_invocation" "karaoke_workos_bootstrap" {
   function_name = aws_lambda_function.karaoke_workos_bootstrap.function_name
 
   input = jsonencode({
     organizationName = "karaoke-${var.domain}"
-    clientId         = local.workos_client_id
     redirectUri      = local.callback_url
   })
 

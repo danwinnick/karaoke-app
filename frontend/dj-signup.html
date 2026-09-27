@@ -22,7 +22,7 @@
         <input id="name" class="input" name="name" maxlength="100" required autocomplete="name" />
 
         <label class="label" for="email">Email</label>
-        <input id="email" class="input" name="email" type="email" maxlength="254" required autocomplete="email" />
+        <input id="email" class="input" name="email" type="email" readonly />
 
         <span class="label" id="address-label">Venue address</span>
         <div id="address-host" class="address-host" aria-labelledby="address-label">
@@ -33,7 +33,6 @@
         <p id="form-error" class="banner banner-error" hidden></p>
         <button id="submit" class="btn btn-primary btn-block" type="submit">Save and open my queue</button>
       </form>
-      <p class="muted small center">Not a DJ? <a class="link" href="/auth/login?role=singer">Log in as a singer instead</a></p>
     </main>
     <script type="module" src="/js/dj-signup.js"></script>
   </body>

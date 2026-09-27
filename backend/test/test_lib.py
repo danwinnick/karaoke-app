@@ -7,6 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'api'))
 
+from lib.login_code import code_matches, hash_code, new_code, normalize_email  # noqa: E402
 from lib.night import night_date  # noqa: E402
 from lib.session import sign_token, verify_token  # noqa: E402
 from lib.youtube import clean_title  # noqa: E402
@@ -36,6 +37,26 @@ class SessionTest(unittest.TestCase):
         self.assertIsNone(verify_token(f"{forged.decode().rstrip('=')}.{sig}", 'secret'))
         self.assertIsNone(verify_token(f'{body}.', 'secret'))
         self.assertIsNone(verify_token(sign_token({'sub': 'x'}, 'secret', -1), 'secret'))
+
+
+class LoginCodeTest(unittest.TestCase):
+    def test_codes_are_six_digits(self):
+        for _ in range(50):
+            self.assertRegex(new_code(), r'^[0-9]{6}$')
+
+    def test_hash_is_bound_to_email_and_secret(self):
+        code_hash = hash_code('secret', 'dj@example.com', '123456')
+        self.assertTrue(code_matches('secret', 'dj@example.com', '123456', code_hash))
+        self.assertFalse(code_matches('secret', 'dj@example.com', '123457', code_hash))
+        self.assertFalse(code_matches('secret', 'other@example.com', '123456', code_hash))
+        self.assertFalse(code_matches('other', 'dj@example.com', '123456', code_hash))
+        self.assertFalse(code_matches('secret', 'dj@example.com', '123456', None))
+
+    def test_normalize_email(self):
+        self.assertEqual(normalize_email('  DJ@Example.COM '), 'dj@example.com')
+        self.assertIsNone(normalize_email('not-an-email'))
+        self.assertIsNone(normalize_email(None))
+        self.assertIsNone(normalize_email('a@b.c' + 'x' * 260))
 
 
 class CleanTitleTest(unittest.TestCase):

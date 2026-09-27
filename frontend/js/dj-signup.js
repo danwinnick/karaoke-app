@@ -1,4 +1,4 @@
-import { api, handleAuthError } from './api.js';
+import { api, handleAuthError, homeFor } from './api.js';
 
 const $ = (id) => document.getElementById(id);
 let place = null;
@@ -61,7 +61,7 @@ $('dj-form').addEventListener('submit', async (e) => {
   try {
     await api('/api/dj/profile', {
       method: 'POST',
-      body: { name: $('name').value, email: $('email').value, ...place },
+      body: { name: $('name').value, ...place },
     });
     window.location.href = '/dj.html';
   } catch (err) {
@@ -76,11 +76,11 @@ async function boot() {
   try {
     const [me, config] = await Promise.all([api('/api/me'), api('/api/config')]);
     if (me.role !== 'dj') {
-      window.location.href = '/auth/login?role=dj';
+      window.location.href = homeFor(me);
       return;
     }
     $('name').value = me.dj?.name ?? me.user.name ?? '';
-    $('email').value = me.dj?.email ?? me.user.email ?? '';
+    $('email').value = me.user.email ?? '';
     if (me.dj) {
       $('heading').textContent = 'Edit your DJ profile';
       showPlace({ address: me.dj.address, lat: me.dj.lat, lng: me.dj.lng, placeId: me.dj.placeId });

@@ -3,6 +3,7 @@ import math
 import os
 import re
 import secrets
+import time
 import uuid
 from urllib.parse import quote
 
@@ -22,7 +23,8 @@ from lib.http_utils import (
 from lib.night import night_date
 from lib.queue import TIP_POSITION, boost_order, build_queue, singer_position, tips_for_dj
 from lib.session import b64url_encode, sign_token, verify_token
-from lib.workos import authorize_url, decode_jwt, ensure_membership, exchange_code, get_user, pkce_pair
+from lib.login_code import code_matches, hash_code, new_code, normalize_email, send_code
+from lib.workos import authenticate_code, authorize_url, ensure_membership, pkce_pair
 from lib.youtube import search_karaoke
 
 logger = logging.getLogger()
@@ -34,6 +36,11 @@ SESSION_COOKIE = 'karaoke_session'
 OAUTH_COOKIE = 'karaoke_oauth'
 SESSION_TTL = 7 * 24 * 3600
 OAUTH_TTL = 600
+# Bumped whenever login rules change, so sessions issued under the old rules stop working.
+SESSION_VERSION = 2
+CODE_TTL = 600
+CODE_RESEND = 60
+CODE_MAX_ATTEMPTS = 5
 MAX_QUEUED_PER_SINGER = 3
 
 
@@ -49,7 +56,25 @@ def query_params(event):
 
 
 def get_session(event):
-    return verify_token(parse_cookies(event).get(SESSION_COOKIE), SECRET)
+    session = verify_token(parse_cookies(event).get(SESSION_COOKIE), SECRET)
+    return session if session and session.get('v') == SESSION_VERSION else None
+
+
+def home_for(role, user_id):
+    if role == 'dj':
+        return '/dj.html' if db.get_dj(user_id) else '/dj-signup.html'
+    return '/singer.html' if db.get_singer(user_id) else '/singer-signup.html'
+
+
+def session_cookie(user_id, email, name, role):
+    token = sign_token(
+        {'sub': user_id, 'email': email, 'name': name, 'role': role, 'v': SESSION_VERSION}, SECRET, SESSION_TTL
+    )
+    return set_cookie(SESSION_COOKIE, token, SESSION_TTL)
+
+
+def login_error(message):
+    return redirect(f"/?error={quote(message, safe='')}", [clear_cookie(OAUTH_COOKIE)])
 
 
 def require_role(event, role=None):
@@ -78,58 +103,106 @@ def require_singer(event):
 
 
 # ---- /auth -----------------------------------------------------------------
+# Each email belongs to exactly one role, fixed the first time it logs in. Singers log in
+# with Google (via WorkOS); DJs log in with a one-time code emailed through SES.
 
 
 def login(event):
-    q = query_params(event)
-    role = 'dj' if q.get('role') == 'dj' else 'singer'
+    session = get_session(event)
+    if session:
+        return redirect(home_for(session['role'], session['sub']))
     verifier, challenge = pkce_pair()
     state = b64url_encode(secrets.token_bytes(16))
-    oauth_cookie = sign_token({'state': state, 'verifier': verifier, 'role': role}, SECRET, OAUTH_TTL)
-    url = authorize_url(state, challenge, REDIRECT_URI, signup=q.get('signup') == '1')
-    return redirect(url, [set_cookie(OAUTH_COOKIE, oauth_cookie, OAUTH_TTL)])
+    oauth_cookie = sign_token({'state': state, 'verifier': verifier}, SECRET, OAUTH_TTL)
+    return redirect(authorize_url(state, challenge, REDIRECT_URI), [set_cookie(OAUTH_COOKIE, oauth_cookie, OAUTH_TTL)])
 
 
 def callback(event):
     q = query_params(event)
     if q.get('error'):
-        return redirect(f"/?error={quote(q.get('error_description') or q['error'], safe='')}")
+        return login_error(q.get('error_description') or q['error'])
 
     oauth = verify_token(parse_cookies(event).get(OAUTH_COOKIE), SECRET)
     if not oauth or not q.get('code') or oauth.get('state') != q.get('state'):
-        return redirect(f"/?error={quote('Your login expired, please try again', safe='')}")
+        return login_error('Your login expired, please try again')
 
-    tokens = exchange_code(q['code'], oauth['verifier'], REDIRECT_URI)
-    claims = decode_jwt(tokens.get('id_token') or tokens['access_token'])
-    user_id = claims['sub']
+    auth = authenticate_code(q['code'], oauth['verifier'])
+    if auth.get('authentication_method') != 'GoogleOAuth':
+        return login_error('Singers log in with Google')
+    user = auth['user']
+    email = normalize_email(user.get('email'))
+    if not email:
+        return login_error('Your Google account has no email address')
 
-    user = None
+    login_record = db.get_login(email)
+    if not login_record:
+        # Accounts from before roles were locked: a DJ who used Google stays a DJ.
+        if db.get_dj(user['id']):
+            return login_error('This email belongs to a DJ account. DJs log in with an email code.')
+        login_record = db.create_login(email, 'singer', user['id'])
+    if login_record['role'] != 'singer':
+        return login_error('This email belongs to a DJ account. DJs log in with an email code.')
+
     try:
-        user = get_user(user_id)
-    except Exception as err:
-        logger.warning('Could not load WorkOS user: %s', err)
-    try:
-        ensure_membership(user_id)
+        ensure_membership(user['id'])
     except Exception as err:
         logger.warning('Could not add organization membership: %s', err)
 
-    user = user or {}
-    email = user.get('email') or claims.get('email') or ''
-    name = (
-        ' '.join(filter(None, [user.get('first_name'), user.get('last_name')]))
-        or claims.get('name')
-        or email.split('@')[0]
-        or 'Singer'
+    user_id = login_record['userId']
+    name = ' '.join(filter(None, [user.get('first_name'), user.get('last_name')])) or email.split('@')[0]
+    return redirect(
+        home_for('singer', user_id),
+        [session_cookie(user_id, email, name, 'singer'), clear_cookie(OAUTH_COOKIE)],
     )
 
-    # Returning users go straight in; new ones fill out the signup form for the role they picked.
-    if oauth['role'] == 'dj':
-        destination = '/dj.html' if db.get_dj(user_id) else '/dj-signup.html'
-    else:
-        destination = '/singer.html' if db.get_singer(user_id) else '/singer-signup.html'
 
-    session = sign_token({'sub': user_id, 'email': email, 'name': name, 'role': oauth['role']}, SECRET, SESSION_TTL)
-    return redirect(destination, [set_cookie(SESSION_COOKIE, session, SESSION_TTL), clear_cookie(OAUTH_COOKIE)])
+def dj_request_code(event):
+    email = normalize_email(parse_body(event).get('email'))
+    if not email:
+        raise HttpError(400, 'Enter a valid email')
+
+    login_record = db.get_login(email)
+    # Singers from before roles were locked have no login record yet.
+    if (login_record and login_record['role'] != 'dj') or (not login_record and db.find_singer_by_email(email)):
+        raise HttpError(409, 'This email belongs to a singer account. Singers log in with Google.')
+
+    code = new_code()
+    if not db.put_login_code(email, hash_code(SECRET, email, code), CODE_TTL, CODE_RESEND):
+        raise HttpError(429, 'We just sent you a code. Wait a minute before asking for another.')
+    send_code(os.environ['SES_FROM_ADDRESS'], email, code, CODE_TTL // 60)
+    return json_response(200, {'sent': True})
+
+
+def dj_verify_code(event):
+    body = parse_body(event)
+    email = normalize_email(body.get('email'))
+    code = body.get('code').strip() if isinstance(body.get('code'), str) else ''
+    if not email or not re.fullmatch(r'[0-9]{6}', code):
+        raise HttpError(400, 'Enter the 6-digit code from your email')
+
+    record = db.attempt_login_code(email)
+    if not record or record['expiresAt'] <= time.time():
+        raise HttpError(400, 'That code has expired. Request a new one.')
+    if record['attempts'] > CODE_MAX_ATTEMPTS:
+        raise HttpError(429, 'Too many tries. Request a new code.')
+    if not code_matches(SECRET, email, code, record.get('codeHash')) or not db.consume_login_code(email):
+        raise HttpError(400, 'That code is not right. Check your email and try again.')
+
+    login_record = db.get_login(email)
+    if not login_record:
+        legacy = db.find_dj_by_email(email)
+        login_record = db.create_login(email, 'dj', legacy['djId'] if legacy else f'dj_{uuid.uuid4().hex}')
+    if login_record['role'] != 'dj':
+        raise HttpError(409, 'This email belongs to a singer account. Singers log in with Google.')
+
+    user_id = login_record['userId']
+    dj = db.get_dj(user_id)
+    name = (dj or {}).get('name') or email.split('@')[0]
+    return json_response(
+        200,
+        {'redirect': '/dj.html' if dj else '/dj-signup.html'},
+        [session_cookie(user_id, email, name, 'dj')],
+    )
 
 
 def logout(event):
@@ -173,13 +246,6 @@ def _finite(value):
     return number if math.isfinite(number) else None
 
 
-def require_email(value):
-    email = require_string(value, 'Email', 254)
-    if not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email):
-        raise HttpError(400, 'Enter a valid email')
-    return email
-
-
 def dj_profile(event):
     session = require_role(event, 'dj')
     body = parse_body(event)
@@ -187,13 +253,12 @@ def dj_profile(event):
     lng = _finite(body.get('lng'))
     if lat is None or lng is None:
         raise HttpError(400, 'Pick your address from the suggestions')
-    email = require_email(body.get('email'))
 
     place_id = body.get('placeId')
     dj = db.put_dj({
         'djId': session['sub'],
         'name': require_string(body.get('name'), 'Name', 100),
-        'email': email,
+        'email': session['email'],
         'address': require_string(body.get('address'), 'Address', 300),
         'placeId': place_id[:300] if isinstance(place_id, str) else None,
         'lat': lat,
@@ -306,8 +371,7 @@ def singer_profile(event):
     session = require_role(event, 'singer')
     body = parse_body(event)
     name = require_string(body.get('name'), 'Name', 100)
-    email = require_email(body.get('email'))
-    db.upsert_singer(session['sub'], name, email)
+    db.upsert_singer(session['sub'], name, session['email'])
     return json_response(200, {'singer': db.get_singer(session['sub'])})
 
 
@@ -449,6 +513,8 @@ ROUTES = {
     'GET /auth/login': login,
     'GET /auth/callback': callback,
     'GET /auth/logout': logout,
+    'POST /auth/dj/code': dj_request_code,
+    'POST /auth/dj/verify': dj_verify_code,
     'GET /api/config': config,
     'GET /api/me': me,
     'GET /api/djs': list_djs,
