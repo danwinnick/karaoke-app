@@ -31,8 +31,9 @@ resource "aws_dynamodb_table" "karaoke_singers" {
 }
 
 # One item per singer per night (singerId + date). Each item carries a requestId,
-# the djId for that night, and the list of songs requested. Kept forever so singers
-# can browse their full history; the GSI serves the DJ's queue for a given night.
+# the djId for that night, and the list of songs requested. Kept forever; each
+# change is also copied to the performances bucket (s3.tf), which is the singer's history.
+# The GSI serves the DJ's queue for a given night.
 resource "aws_dynamodb_table" "karaoke_requested_songs" {
   name         = "karaoke-requested-songs"
   billing_mode = "PAY_PER_REQUEST"

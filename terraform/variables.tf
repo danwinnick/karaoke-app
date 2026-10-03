@@ -10,10 +10,10 @@ variable "hosted_zone_id" {
   default     = "Z0011141118IUT41PGF3G"
 }
 
-variable "youtube_api_key" {
-  description = "Server key for the YouTube Data API v3."
-  type        = string
-  sensitive   = true
+variable "stingray_api" {
+  description = "Search Stingray through its Karaoke API, using the credentials in SSM (/karaoke/stingray_client_id and /karaoke/stingray_client_secret). When false, Stingray is searched through backend/api/catalogs/stingray.csv."
+  type        = bool
+  default     = false
 }
 
 variable "night_timezone" {

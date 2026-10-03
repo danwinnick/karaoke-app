@@ -46,26 +46,44 @@ def clean_title(raw):
     return title.strip() or decode_entities(raw)
 
 
+# Why YouTube turned a search down, from its error body: 'quotaExceeded' once the day's
+# searches are used up, 'rateLimitExceeded', 'keyInvalid', and so on.
+def error_reason(body):
+    try:
+        error = json.loads(body)['error']
+        return (error.get('errors') or [{}])[0].get('reason') or error.get('message') or 'unknown'
+    except (ValueError, KeyError, TypeError, AttributeError):
+        return 'unknown'
+
+
 def search_karaoke(query, api_key):
     key = query.lower()
     hit = _cache.get(key)
     if hit and hit['expires'] > time.time():
         return hit['results']
 
+    # search.list (https://developers.google.com/youtube/v3/docs/search/list). The video filters
+    # only work with type=video; embeddable and syndicated keep to videos the DJ's player, which
+    # is an embed outside youtube.com, is allowed to play. `fields` trims the answer to what is
+    # used below, and the key goes in a header so it never shows up in a logged URL.
     params = urlencode({
         'part': 'snippet',
         'type': 'video',
         'videoEmbeddable': 'true',
+        'videoSyndicated': 'true',
         'maxResults': '8',
         'q': f'{query} karaoke',
-        'key': api_key,
+        'fields': 'items(id/videoId,snippet(title,channelTitle,thumbnails))',
     })
-    req = urllib.request.Request(f'https://www.googleapis.com/youtube/v3/search?{params}')
+    req = urllib.request.Request(
+        f'https://www.googleapis.com/youtube/v3/search?{params}',
+        headers={'x-goog-api-key': api_key or ''},
+    )
     try:
         with urllib.request.urlopen(req, timeout=10) as res:
             data = json.load(res)
     except urllib.error.HTTPError as err:
-        raise RuntimeError(f'YouTube search failed: {err.code} {err.read().decode(errors="replace")}') from None
+        raise RuntimeError(f'YouTube search failed: {err.code} {error_reason(err.read())}') from None
 
     results = []
     for item in data.get('items') or []:

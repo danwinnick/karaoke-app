@@ -1,4 +1,4 @@
-import json
+import logging
 import os
 import time
 import uuid
@@ -9,7 +9,9 @@ import boto3
 from boto3.dynamodb.conditions import Attr
 from botocore.exceptions import ClientError
 
-from lib.session import b64url_decode, b64url_encode
+from lib import performances
+
+logger = logging.getLogger()
 
 _dynamodb = boto3.resource('dynamodb')
 
@@ -211,6 +213,14 @@ def set_singer_dj(singer_id, dj_id):
     )
 
 
+def mark_performances_synced(singer_id):
+    _singers.update_item(
+        Key={'singerId': singer_id},
+        UpdateExpression='SET performancesSyncedAt = :now',
+        ExpressionAttributeValues={':now': now_iso()},
+    )
+
+
 # ---- Requested songs (one item per singer per night) ------------------------
 
 
@@ -234,9 +244,22 @@ def query_dj_night(dj_id, date):
         kwargs['ExclusiveStartKey'] = page['LastEvaluatedKey']
 
 
+# Every change to a night goes through here, so the singer's performance file in S3 is
+# rewritten to match.
+def _update_night(singer_id, date, **kwargs):
+    item = _songs.update_item(Key={'singerId': singer_id, 'date': date}, ReturnValues='ALL_NEW', **kwargs)['Attributes']
+    try:
+        performances.save(item)
+    except Exception:
+        # The queue change itself went through; the file catches up on the night's next change.
+        logger.exception('Could not save performance')
+    return item
+
+
 def append_song(singer_id, singer_name, date, dj_id, song):
-    res = _songs.update_item(
-        Key={'singerId': singer_id, 'date': date},
+    return _update_night(
+        singer_id,
+        date,
         UpdateExpression=(
             'SET songs = list_append(if_not_exists(songs, :empty), :song), djId = :djId, singerName = :name, '
             'requestId = if_not_exists(requestId, :rid), createdAt = if_not_exists(createdAt, :now), updatedAt = :now'
@@ -249,9 +272,7 @@ def append_song(singer_id, singer_name, date, dj_id, song):
             ':rid': str(uuid.uuid4()),
             ':now': now_iso(),
         }),
-        ReturnValues='ALL_NEW',
     )
-    return res['Attributes']
 
 
 # Moves tonight's still-queued songs to a new DJ (at the back of their line).
@@ -261,8 +282,9 @@ def move_night_to_dj(item, dj_id):
         {**song, 'djId': dj_id, 'order': now + i} if song.get('status') == 'queued' else song
         for i, song in enumerate(item.get('songs') or [])
     ]
-    _songs.update_item(
-        Key={'singerId': item['singerId'], 'date': item['date']},
+    _update_night(
+        item['singerId'],
+        item['date'],
         UpdateExpression='SET songs = :songs, djId = :djId, updatedAt = :now',
         ConditionExpression='updatedAt = :prev',
         ExpressionAttributeValues=_clean({':songs': songs, ':djId': dj_id, ':now': now_iso(), ':prev': item.get('updatedAt')}),
@@ -277,8 +299,9 @@ def update_song(singer_id, date, index, song_id, fields):
         names[f'#f{i}'] = key
         values[f':v{i}'] = value
         sets.append(f'songs[{int(index)}].#f{i} = :v{i}')
-    _songs.update_item(
-        Key={'singerId': singer_id, 'date': date},
+    _update_night(
+        singer_id,
+        date,
         UpdateExpression=f"SET {', '.join(sets)}",
         ConditionExpression=f'songs[{int(index)}].songId = :sid',
         ExpressionAttributeNames=names,
@@ -299,8 +322,9 @@ def record_tip(singer_id, date, dj_id, boost=None):
         values[':order'] = boost['order']
         values[':sid'] = boost['songId']
         kwargs['ExpressionAttributeNames'] = {'#o': 'order'}
-    _songs.update_item(
-        Key={'singerId': singer_id, 'date': date},
+    _update_night(
+        singer_id,
+        date,
         UpdateExpression=update,
         ConditionExpression=condition,
         ExpressionAttributeValues=_clean(values),
@@ -308,28 +332,13 @@ def record_tip(singer_id, date, dj_id, boost=None):
     )
 
 
-class InvalidCursor(ValueError):
-    pass
-
-
-def history_page(singer_id, cursor=None, limit=20):
-    kwargs = {
-        'KeyConditionExpression': 'singerId = :s',
-        'ExpressionAttributeValues': {':s': singer_id},
-        'ScanIndexForward': False,
-        'Limit': limit,
-    }
-    if cursor:
-        try:
-            start_key = json.loads(b64url_decode(cursor))
-        except ValueError:
-            start_key = None
-        if not isinstance(start_key, dict) or start_key.get('singerId') != singer_id:
-            raise InvalidCursor('Invalid history cursor')
-        kwargs['ExclusiveStartKey'] = start_key
-    res = _songs.query(**kwargs)
-    last = res.get('LastEvaluatedKey')
-    return {
-        'items': res['Items'],
-        'cursor': b64url_encode(json.dumps(last).encode()) if last else None,
-    }
+# Every night a singer has requested songs on.
+def list_nights(singer_id):
+    items = []
+    kwargs = {'KeyConditionExpression': 'singerId = :s', 'ExpressionAttributeValues': {':s': singer_id}}
+    while True:
+        page = _songs.query(**kwargs)
+        items.extend(page['Items'])
+        if 'LastEvaluatedKey' not in page:
+            return items
+        kwargs['ExclusiveStartKey'] = page['LastEvaluatedKey']

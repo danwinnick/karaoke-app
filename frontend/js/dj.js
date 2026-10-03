@@ -3,6 +3,8 @@ import { api, el, formatDate, handleAuthError, homeFor, toast } from './api.js';
 const $ = (id) => document.getElementById(id);
 const POLL_MS = 4000;
 const OVERLAY_COUNT = 5;
+// Songs found on these have no video: the DJ plays them in that service's own player.
+const SOURCE_NAMES = { karafun: 'KaraFun', stingray: 'Stingray Karaoke' };
 
 let state = null;
 let player = null;
@@ -15,6 +17,10 @@ let busy = false;
 
 function tipBadge(entry) {
   return entry.tipped ? el('span', { class: 'tip-badge', title: 'Tipped tonight' }, '💲') : null;
+}
+
+function sourceBadge(entry) {
+  return SOURCE_NAMES[entry.source] ? el('span', { class: 'source-badge' }, SOURCE_NAMES[entry.source]) : null;
 }
 
 function render(next) {
@@ -34,7 +40,7 @@ function render(next) {
             'div',
             {},
             el('div', { class: 'now-singer' }, now.singerName, ' ', tipBadge(now)),
-            el('div', { class: 'now-title' }, now.title),
+            el('div', { class: 'now-title' }, now.title, ' ', sourceBadge(now)),
           ),
         )
       : el('p', { class: 'muted' }, state.queue.length ? 'Press Next singer to start.' : 'Nobody in line yet.'),
@@ -55,7 +61,7 @@ function render(next) {
               'div',
               { class: 'queue-body' },
               el('div', { class: 'queue-singer' }, entry.singerName, ' ', tipBadge(entry)),
-              el('div', { class: 'queue-song' }, entry.title),
+              el('div', { class: 'queue-song' }, entry.title, ' ', sourceBadge(entry)),
             ),
             el(
               'div',
@@ -101,8 +107,8 @@ function renderOverlay() {
     ),
   );
   if (!$('player-modal').hidden) {
-    if (now && now.videoId !== loadedVideoId) playVideo(now.videoId);
-    if (!now) closePlayer();
+    if (now) showTrack(now);
+    else closePlayer();
   }
 }
 
@@ -197,13 +203,29 @@ function loadYouTubeApi() {
 async function playVideo(videoId) {
   loadedVideoId = videoId;
   const p = await loadYouTubeApi();
-  p.loadVideoById(videoId);
+  if (loadedVideoId === videoId) p.loadVideoById(videoId);
+}
+
+// Plays a YouTube track, or covers the video with where to play a KaraFun or Stingray one.
+function showTrack(now) {
+  const external = $('player-external');
+  external.hidden = Boolean(now.videoId);
+  if (now.videoId) {
+    if (now.videoId !== loadedVideoId) playVideo(now.videoId);
+    return;
+  }
+  if (loadedVideoId) player?.stopVideo?.();
+  loadedVideoId = null;
+  external.replaceChildren(
+    el('div', { class: 'player-external-source' }, `Play on ${SOURCE_NAMES[now.source] ?? 'your karaoke player'}`),
+    el('div', { class: 'player-external-title' }, now.title),
+  );
 }
 
 function openPlayer(now) {
   $('player-modal').hidden = false;
   document.body.classList.add('modal-open');
-  if (now.videoId !== loadedVideoId) playVideo(now.videoId);
+  showTrack(now);
 }
 
 function closePlayer() {

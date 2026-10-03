@@ -2,6 +2,9 @@ import { api, el, formatDate, handleAuthError, homeFor, toast } from './api.js';
 
 const $ = (id) => document.getElementById(id);
 const POLL_MS = 10000;
+const SEARCH_POLL_MS = 400;
+const SEARCH_TIMEOUT_MS = 20000;
+const SOURCE_NAMES = { karafun: 'KaraFun', stingray: 'Stingray Karaoke', youtube: 'YouTube' };
 const STATUS_TEXT = {
   queued: 'In line',
   playing: 'On stage now!',
@@ -17,8 +20,7 @@ let selected = null;
 let searchTimer;
 let searchSeq = 0;
 let activeSuggestion = -1;
-let historyCursor = null;
-let historyLoaded = false;
+let performancesCursor = null;
 
 // ---- DJ picker -------------------------------------------------------------
 
@@ -177,7 +179,9 @@ function choose(result) {
   closeSuggestions();
   $('song-search').value = result.title;
   $('song-name').value = result.title;
-  $('selected-thumb').src = result.thumbnail ?? '';
+  // Only YouTube results have a picture.
+  $('selected-thumb').hidden = !result.thumbnail;
+  if (result.thumbnail) $('selected-thumb').src = result.thumbnail;
   $('selected').hidden = false;
 }
 
@@ -189,21 +193,60 @@ function highlight(index) {
   items[activeSuggestion].scrollIntoView({ block: 'nearest' });
 }
 
+// A note bouncing around inside a circle, shown while the lookup runs, over the name of the
+// source being searched.
+function searchingNote() {
+  return el(
+    'li',
+    { class: 'suggestion-status searching', role: 'status', 'aria-label': 'Searching' },
+    el(
+      'span',
+      { class: 'note-loader', 'aria-hidden': 'true' },
+      el('span', { class: 'note-loader-x' }, el('span', { class: 'note-loader-note' }, '♪')),
+    ),
+    el('span', { class: 'searching-source' }),
+  );
+}
+
+// A search is a file in S3 that the search state machine fills in as it looks on KaraFun, then
+// Stingray, then YouTube. Re-reads it until its status changes from 'searching', and answers
+// with the finished search, or null if the singer has typed something else since.
+async function searchFinished(url, seq, onProgress) {
+  const deadline = Date.now() + SEARCH_TIMEOUT_MS;
+  while (seq === searchSeq) {
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) break;
+    const found = await res.json();
+    if (found.status !== 'searching') return found;
+    onProgress(found);
+    if (Date.now() > deadline) break;
+    await new Promise((resolve) => setTimeout(resolve, SEARCH_POLL_MS));
+  }
+  if (seq !== searchSeq) return null;
+  throw new Error('The search is taking too long. Try again.');
+}
+
 async function search(q) {
   const seq = ++searchSeq;
   const list = $('suggestions');
-  list.replaceChildren(el('li', { class: 'suggestion-status' }, 'Searching karaoke tracks…'));
+  const note = searchingNote();
+  list.replaceChildren(note);
   list.hidden = false;
   try {
-    const { results } = await api(`/api/youtube/search?q=${encodeURIComponent(q)}`);
-    if (seq !== searchSeq) return;
+    const { url } = await api('/api/songs/search', { method: 'POST', body: { q } });
+    const found = await searchFinished(url, seq, ({ source }) => {
+      note.lastChild.textContent = SOURCE_NAMES[source] ? `Looking on ${SOURCE_NAMES[source]}…` : '';
+    });
+    if (!found || seq !== searchSeq) return;
+    if (found.status === 'failed') throw new Error("We couldn't search for songs just now. Try again.");
+    const { results } = found;
     list.replaceChildren(
       ...(results.length
         ? results.map((r) =>
             el(
               'li',
               { class: 'suggestion', role: 'option', 'aria-selected': 'false', onclick: () => choose(r) },
-              el('img', { src: r.thumbnail, alt: '', loading: 'lazy' }),
+              r.thumbnail ? el('img', { src: r.thumbnail, alt: '', loading: 'lazy' }) : el('div', { class: 'thumb-placeholder' }, '🎤'),
               el('div', {}, el('div', { class: 'song-title' }, r.title), el('div', { class: 'song-meta' }, r.channel)),
             ),
           )
@@ -259,6 +302,8 @@ $('add-song').addEventListener('click', async () => {
     const next = await api('/api/singer/requests', {
       method: 'POST',
       body: {
+        source: selected.source,
+        sourceId: selected.sourceId,
         videoId: selected.videoId,
         title: $('song-name').value.trim() || selected.title,
         thumbnail: selected.thumbnail,
@@ -276,31 +321,43 @@ $('add-song').addEventListener('click', async () => {
   }
 });
 
-// ---- history ---------------------------------------------------------------
+// ---- performances -----------------------------------------------------------
+// One per night: the set of songs picked on that date.
 
-async function loadHistory() {
+async function loadPerformances({ reset = false } = {}) {
   try {
-    const page = await api(`/api/singer/history${historyCursor ? `?cursor=${historyCursor}` : ''}`);
-    historyCursor = page.cursor;
-    const container = $('history');
-    if (!page.nights.length && !container.children.length) {
-      container.append(el('p', { class: 'card empty' }, "You haven't picked any songs yet."));
+    const cursor = reset ? null : performancesCursor;
+    const page = await api(`/api/singer/performances${cursor ? `?cursor=${cursor}` : ''}`);
+    performancesCursor = page.cursor;
+    const container = $('performances');
+    if (reset) container.replaceChildren();
+    if (!page.performances.length && !container.children.length) {
+      container.append(el('p', { class: 'card empty' }, 'No performances yet. Pick a song to start your first.'));
     }
-    for (const night of page.nights) {
+    for (const performance of page.performances) {
+      const count = performance.songs.length;
       container.append(
         el(
-          'div',
-          { class: 'card' },
+          'details',
+          { class: 'card performance', open: !container.children.length },
           el(
-            'div',
-            { class: 'history-head' },
-            el('strong', {}, formatDate(night.date)),
-            el('span', { class: 'muted small' }, `${night.djName}${night.tipped ? ' · 💲 tipped' : ''}`),
+            'summary',
+            {},
+            el(
+              'span',
+              { class: 'performance-head' },
+              el('strong', {}, formatDate(performance.date)),
+              el(
+                'span',
+                { class: 'muted small' },
+                `${count} song${count === 1 ? '' : 's'} · ${performance.djName}${performance.tipped ? ' · 💲 tipped' : ''}`,
+              ),
+            ),
           ),
           el(
             'ul',
             { class: 'song-list' },
-            night.songs.map((song) =>
+            performance.songs.map((song) =>
               el(
                 'li',
                 { class: `song song-${song.status}` },
@@ -317,23 +374,21 @@ async function loadHistory() {
         ),
       );
     }
-    $('history-more').hidden = !historyCursor;
+    $('performances-more').hidden = !performancesCursor;
   } catch (err) {
     if (!handleAuthError(err, 'singer')) toast(err.message, { kind: 'error' });
   }
 }
 
-$('history-more').addEventListener('click', loadHistory);
+$('performances-more').addEventListener('click', () => loadPerformances());
 
 document.querySelectorAll('.tab').forEach((tab) =>
   tab.addEventListener('click', () => {
     document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t === tab));
     $('tab-tonight').hidden = tab.dataset.tab !== 'tonight';
-    $('tab-history').hidden = tab.dataset.tab !== 'history';
-    if (tab.dataset.tab === 'history' && !historyLoaded) {
-      historyLoaded = true;
-      loadHistory();
-    }
+    $('tab-performances').hidden = tab.dataset.tab !== 'performances';
+    // Reloaded on every visit so tonight's performance is current.
+    if (tab.dataset.tab === 'performances') loadPerformances({ reset: true });
     window.scrollTo(0, 0);
   }),
 );

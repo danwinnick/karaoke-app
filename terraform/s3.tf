@@ -74,3 +74,33 @@ resource "aws_s3_object" "karaoke_frontend" {
   content_type  = lookup(local.content_types, reverse(split(".", each.value))[0], "application/octet-stream")
   cache_control = endswith(each.value, ".html") ? "no-cache" : "public, max-age=300"
 }
+
+# One JSON file per singer per night, named <singerId>/<date>.json. Written and read only by
+# the API Lambda. Not force_destroy: this is the singers' history.
+resource "aws_s3_bucket" "karaoke_performances" {
+  bucket = "karaoke-performances-${local.account_id}"
+}
+
+resource "aws_s3_bucket_public_access_block" "karaoke_performances" {
+  bucket                  = aws_s3_bucket.karaoke_performances.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_ownership_controls" "karaoke_performances" {
+  bucket = aws_s3_bucket.karaoke_performances.id
+  rule {
+    object_ownership = "BucketOwnerEnforced"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "karaoke_performances" {
+  bucket = aws_s3_bucket.karaoke_performances.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}

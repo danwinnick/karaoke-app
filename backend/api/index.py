@@ -9,7 +9,7 @@ from urllib.parse import quote
 
 from botocore.exceptions import ClientError
 
-from lib import db
+from lib import db, performances, songs
 from lib.http_utils import (
     HttpError,
     clear_cookie,
@@ -33,7 +33,6 @@ from lib.workos import (
     find_org_user,
     pkce_pair,
 )
-from lib.youtube import search_karaoke
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -411,6 +410,7 @@ def singer_status(singer_id):
             {
                 'songId': song.get('songId'),
                 'title': song.get('title'),
+                'source': song.get('source') or 'youtube',
                 'videoId': song.get('videoId'),
                 'thumbnail': song.get('thumbnail'),
                 'status': song.get('status'),
@@ -452,24 +452,44 @@ def choose_dj(event):
     return json_response(200, singer_status(session['sub']))
 
 
-def youtube_search(event):
+# Starts a search and answers with where its file will be. The state machine does the looking:
+# KaraFun first, then Stingray, then YouTube, and only the first source that has the song is used.
+def song_search(event):
     require_role(event)
-    q = (query_params(event).get('q') or '').strip()
+    q = parse_body(event).get('q')
+    q = q.strip() if isinstance(q, str) else ''
     if len(q) < 2 or len(q) > 100:
         raise HttpError(400, 'Search must be 2-100 characters')
-    return json_response(200, {'results': search_karaoke(q, os.environ.get('YOUTUBE_API_KEY'))})
+    search = songs.new_search(str(uuid.uuid4()), q)
+    # Saved before the state machine starts, so the file is there for its first step and for
+    # the singer's page.
+    songs.save(search)
+    songs.start(search['searchId'])
+    return json_response(202, {
+        'searchId': search['searchId'],
+        'status': search['status'],
+        'url': f"/{songs.search_key(search['searchId'])}",
+    })
 
 
 def request_song(event):
     session, singer = require_singer(event)
     body = parse_body(event)
-    video_id = require_string(body.get('videoId'), 'Video', 20)
-    if not re.fullmatch(r'[A-Za-z0-9_-]{11}', video_id):
-        raise HttpError(400, 'Invalid video')
+    source = body.get('source') or 'youtube'
+    if source not in songs.SOURCES:
+        raise HttpError(400, 'Invalid song source')
     title = require_string(body.get('title'), 'Song name', 200)
-    thumbnail = body.get('thumbnail')
-    if not (isinstance(thumbnail, str) and re.match(r'https://i[0-9]?\.ytimg\.com/', thumbnail)):
-        thumbnail = None
+    # Only YouTube songs have a video; the DJ plays the others in that service's own player.
+    video_id = thumbnail = source_id = None
+    if source == 'youtube':
+        video_id = require_string(body.get('videoId'), 'Video', 20)
+        if not re.fullmatch(r'[A-Za-z0-9_-]{11}', video_id):
+            raise HttpError(400, 'Invalid video')
+        thumbnail = body.get('thumbnail')
+        if not (isinstance(thumbnail, str) and re.match(r'https://i[0-9]?\.ytimg\.com/', thumbnail)):
+            thumbnail = None
+    elif isinstance(body.get('sourceId'), str):
+        source_id = body['sourceId'][:100] or None
 
     dj_id = singer.get('currentDjId')
     if not dj_id:
@@ -486,6 +506,8 @@ def request_song(event):
 
     db.append_song(session['sub'], singer.get('name'), date, dj_id, {
         'songId': str(uuid.uuid4()),
+        'source': source,
+        'sourceId': source_id,
         'videoId': video_id,
         'title': title,
         'thumbnail': thumbnail,
@@ -533,35 +555,40 @@ def tip(event):
     return json_response(200, {'boosted': bool(boost), **singer_status(session['sub'])})
 
 
-def history(event):
-    session, _ = require_singer(event)
-    try:
-        page = db.history_page(session['sub'], query_params(event).get('cursor'))
-    except db.InvalidCursor as err:
-        raise HttpError(400, str(err))
-    dj_names = db.get_dj_names([i.get('djId') for i in page['items']])
+def list_performances(event):
+    session, singer = require_singer(event)
+    before = query_params(event).get('cursor')
+    if before and not performances.DATE_RE.fullmatch(before):
+        raise HttpError(400, 'Invalid performances cursor')
+
+    # Nights from before the performances bucket existed are only in DynamoDB.
+    if not singer.get('performancesSyncedAt'):
+        for item in db.list_nights(session['sub']):
+            performances.save(item)
+        db.mark_performances_synced(session['sub'])
+
+    page = performances.page(session['sub'], before)
+    dj_names = db.get_dj_names([p.get('djId') for p in page['performances']])
     return json_response(200, {
         'cursor': page['cursor'],
-        'nights': [
+        'performances': [
             {
-                'date': item['date'],
-                'requestId': item.get('requestId'),
-                'djId': item.get('djId'),
-                'djName': dj_names.get(item.get('djId'), 'Unknown DJ'),
-                'tipped': bool(item.get('tip')),
+                'date': p['date'],
+                'djName': dj_names.get(p.get('djId'), 'Unknown DJ'),
+                'tipped': bool(p.get('tip')),
                 'songs': [
                     {
                         'title': s.get('title'),
+                        'source': s.get('source') or 'youtube',
                         'videoId': s.get('videoId'),
                         'thumbnail': s.get('thumbnail'),
                         'status': s.get('status'),
                         'requestedAt': s.get('requestedAt'),
-                        'djName': dj_names.get(s.get('djId'), dj_names.get(item.get('djId'))),
                     }
-                    for s in item.get('songs') or []
+                    for s in p.get('songs') or []
                 ],
             }
-            for item in page['items']
+            for p in page['performances']
         ],
     })
 
@@ -584,11 +611,11 @@ ROUTES = {
     'POST /api/singer/profile': singer_profile,
     'GET /api/singer/status': get_status,
     'POST /api/singer/dj': choose_dj,
-    'GET /api/youtube/search': youtube_search,
+    'POST /api/songs/search': song_search,
     'POST /api/singer/requests': request_song,
     'POST /api/singer/requests/cancel': cancel_song,
     'POST /api/singer/tip': tip,
-    'GET /api/singer/history': history,
+    'GET /api/singer/performances': list_performances,
 }
 
 

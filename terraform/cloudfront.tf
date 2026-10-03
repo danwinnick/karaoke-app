@@ -51,6 +51,12 @@ resource "aws_cloudfront_distribution" "karaoke" {
   }
 
   origin {
+    origin_id                = "karaoke-searches"
+    domain_name              = aws_s3_bucket.karaoke_searches.bucket_regional_domain_name
+    origin_access_control_id = aws_cloudfront_origin_access_control.karaoke_s3.id
+  }
+
+  origin {
     origin_id                = "karaoke-api"
     domain_name              = local.api_origin_domain
     origin_access_control_id = aws_cloudfront_origin_access_control.karaoke_lambda.id
@@ -85,6 +91,18 @@ resource "aws_cloudfront_distribution" "karaoke" {
       cache_policy_id          = data.aws_cloudfront_cache_policy.karaoke_caching_disabled.id
       origin_request_policy_id = data.aws_cloudfront_origin_request_policy.karaoke_all_viewer_except_host.id
     }
+  }
+
+  # Song search files (search.tf), re-read by the singer's page while a search runs.
+  ordered_cache_behavior {
+    path_pattern               = "/searches/*"
+    target_origin_id           = "karaoke-searches"
+    viewer_protocol_policy     = "redirect-to-https"
+    allowed_methods            = ["GET", "HEAD"]
+    cached_methods             = ["GET", "HEAD"]
+    compress                   = true
+    cache_policy_id            = data.aws_cloudfront_cache_policy.karaoke_caching_disabled.id
+    response_headers_policy_id = data.aws_cloudfront_response_headers_policy.karaoke_security_headers.id
   }
 
   restrictions {

@@ -395,9 +395,85 @@ select.input {
   border-radius: 6px;
 }
 
+.suggestion .thumb-placeholder {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 80px;
+  aspect-ratio: 16 / 9;
+  border-radius: 6px;
+  background: var(--card);
+}
+
 .suggestion-status {
   padding: 0.75rem;
   color: var(--muted);
+}
+
+/* A note bouncing around inside a circle while the song lookup runs. */
+.note-loader {
+  position: relative;
+  display: block;
+  width: 72px;
+  height: 72px;
+  margin: 0.5rem auto;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  box-shadow:
+    0 0 18px rgb(255 62 165 / 35%),
+    inset 0 0 14px rgb(255 62 165 / 20%);
+  animation: note-ring 0.52s ease-in-out infinite alternate;
+}
+
+.searching-source {
+  display: block;
+  min-height: 1.4em;
+  text-align: center;
+  font-size: 0.85rem;
+}
+
+.note-loader-x,
+.note-loader-note {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+/* Sideways and up-and-down run at different speeds, so the note never retraces its path. */
+.note-loader-x {
+  animation: note-x 0.83s ease-in-out infinite alternate;
+}
+
+.note-loader-note {
+  color: var(--gold);
+  font-size: 1.5rem;
+  line-height: 1;
+  animation: note-y 0.52s cubic-bezier(0.5, 0, 1, 0.6) infinite alternate;
+}
+
+@keyframes note-x {
+  from {
+    transform: translateX(-14px);
+  }
+  to {
+    transform: translateX(14px);
+  }
+}
+
+@keyframes note-y {
+  from {
+    transform: translateY(-14px) rotate(-14deg);
+  }
+  to {
+    transform: translateY(14px) rotate(14deg) scale(1.15, 0.85);
+  }
+}
+
+@keyframes note-ring {
+  to {
+    transform: scale(1.05);
+  }
 }
 
 .selected {
@@ -482,13 +558,40 @@ select.input {
   margin: 0.6rem 0 0;
 }
 
-.history-head {
+.performance {
+  padding: 0.25rem 1rem;
+}
+
+.performance summary {
   display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-  margin-bottom: 0.5rem;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: var(--tap);
+  list-style: none;
+  cursor: pointer;
+}
+
+.performance summary::-webkit-details-marker {
+  display: none;
+}
+
+.performance summary::after {
+  content: '›';
+  flex: none;
+  font-size: 1.4rem;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+
+.performance[open] summary::after {
+  transform: rotate(90deg);
+}
+
+.performance-head {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 0.1rem;
 }
 
 .tabbar {
@@ -756,6 +859,41 @@ body.modal-open {
   width: 100%;
   height: 100%;
   border: 0;
+}
+
+.player-external {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-content: center;
+  gap: 0.75rem;
+  padding: 2rem;
+  text-align: center;
+  background: var(--bg);
+}
+
+.player-external-source {
+  color: var(--gold);
+  font-size: clamp(1.2rem, 3vw, 2rem);
+}
+
+.player-external-title {
+  font-size: clamp(1.8rem, 6vw, 4.5rem);
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.source-badge {
+  display: inline-block;
+  padding: 0.05rem 0.45rem;
+  border: 1px solid var(--gold);
+  border-radius: 999px;
+  color: var(--gold);
+  font-size: 0.7rem;
+  font-weight: 600;
+  vertical-align: middle;
+  white-space: nowrap;
 }
 
 .overlay {

@@ -65,6 +65,27 @@ data "aws_iam_policy_document" "karaoke_api" {
   }
 
   statement {
+    actions   = ["s3:GetObject", "s3:PutObject"]
+    resources = ["${aws_s3_bucket.karaoke_performances.arn}/*"]
+  }
+
+  statement {
+    actions   = ["s3:ListBucket"]
+    resources = [aws_s3_bucket.karaoke_performances.arn]
+  }
+
+  # Song lookup: the API creates the search's file and starts the state machine (search.tf).
+  statement {
+    actions   = ["s3:PutObject"]
+    resources = ["${aws_s3_bucket.karaoke_searches.arn}/searches/*"]
+  }
+
+  statement {
+    actions   = ["states:StartExecution"]
+    resources = [aws_sfn_state_machine.karaoke_song_search.arn]
+  }
+
+  statement {
     actions   = ["ses:SendEmail"]
     resources = [aws_sesv2_email_identity.karaoke.arn]
   }
@@ -99,20 +120,22 @@ resource "aws_lambda_function" "karaoke_api" {
 
   environment {
     variables = {
-      PUBLIC_URL           = local.public_url
-      DJ_TABLE             = aws_dynamodb_table.karaoke_dj.name
-      SINGERS_TABLE        = aws_dynamodb_table.karaoke_singers.name
-      SONGS_TABLE          = aws_dynamodb_table.karaoke_requested_songs.name
-      SONGS_DJ_INDEX       = "djId-date-index"
-      AUTH_TABLE           = aws_dynamodb_table.karaoke_auth.name
-      SES_FROM_ADDRESS     = "Karaoke <no-reply@${local.app_domain}>"
-      WORKOS_API_KEY_PARAM = data.aws_ssm_parameter.karaoke_workos_api_key.name
-      WORKOS_CLIENT_ID     = local.workos_client_id
-      WORKOS_ORG_ID        = local.workos.organization_id
-      SESSION_SECRET       = random_password.karaoke_session_secret.result
-      GOOGLE_MAPS_API_KEY  = data.aws_ssm_parameter.karaoke_google_api_key.value
-      YOUTUBE_API_KEY      = var.youtube_api_key
-      NIGHT_TIMEZONE       = var.night_timezone
+      PUBLIC_URL               = local.public_url
+      DJ_TABLE                 = aws_dynamodb_table.karaoke_dj.name
+      SINGERS_TABLE            = aws_dynamodb_table.karaoke_singers.name
+      SONGS_TABLE              = aws_dynamodb_table.karaoke_requested_songs.name
+      SONGS_DJ_INDEX           = "djId-date-index"
+      AUTH_TABLE               = aws_dynamodb_table.karaoke_auth.name
+      PERFORMANCES_BUCKET      = aws_s3_bucket.karaoke_performances.bucket
+      SEARCHES_BUCKET          = aws_s3_bucket.karaoke_searches.bucket
+      SEARCH_STATE_MACHINE_ARN = aws_sfn_state_machine.karaoke_song_search.arn
+      SES_FROM_ADDRESS         = "Karaoke <no-reply@${local.app_domain}>"
+      WORKOS_API_KEY_PARAM     = data.aws_ssm_parameter.karaoke_workos_api_key.name
+      WORKOS_CLIENT_ID         = local.workos_client_id
+      WORKOS_ORG_ID            = local.workos.organization_id
+      SESSION_SECRET           = random_password.karaoke_session_secret.result
+      GOOGLE_MAPS_API_KEY      = data.aws_ssm_parameter.karaoke_google_api_key.value
+      NIGHT_TIMEZONE           = var.night_timezone
     }
   }
 

@@ -16,6 +16,8 @@ def build_queue(items, dj_id):
                 'singerName': item.get('singerName'),
                 'songId': song.get('songId'),
                 'index': index,
+                # Songs from before KaraFun and Stingray lookups have no source: they are YouTube.
+                'source': song.get('source') or 'youtube',
                 'videoId': song.get('videoId'),
                 'title': song.get('title'),
                 'thumbnail': song.get('thumbnail'),

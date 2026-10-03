@@ -19,7 +19,6 @@ env:
   AWS_REGION: us-west-2
   AWS_DEFAULT_REGION: us-west-2
   TF_IN_AUTOMATION: "true"
-  TF_VAR_youtube_api_key: ${{ secrets.YOUTUBE_API_KEY }}
 
 jobs:
   test:
